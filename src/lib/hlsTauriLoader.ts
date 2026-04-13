@@ -1,0 +1,129 @@
+/**
+ * Custom hls.js loader that uses @tauri-apps/plugin-http for all requests.
+ * This routes HLS manifest and segment fetches through Rust, bypassing
+ * WebView2's CORS restrictions for cross-origin streams.
+ */
+
+import type {
+  HlsConfig,
+  Loader,
+  LoaderCallbacks,
+  LoaderConfiguration,
+  LoaderContext,
+  LoaderStats,
+} from 'hls.js';
+
+function makeStats(): LoaderStats {
+  return {
+    aborted: false,
+    loaded: 0,
+    retry: 0,
+    total: 0,
+    chunkCount: 0,
+    bwEstimate: 0,
+    loading: { start: 0, first: 0, end: 0 },
+    parsing: { start: 0, end: 0 },
+    buffering: { start: 0, first: 0, end: 0 },
+  };
+}
+
+type LoaderClass = new (config: HlsConfig) => Loader<LoaderContext>;
+
+/**
+ * Returns a hls.js-compatible Loader class that uses the Tauri HTTP plugin.
+ * Returns undefined when running outside Tauri (falls back to hls.js default).
+ */
+export async function buildTauriHlsLoader(): Promise<LoaderClass | undefined> {
+  if (!window.__TAURI_INTERNALS__) return undefined;
+
+  const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+
+  class TauriLoader implements Loader<LoaderContext> {
+    context: LoaderContext | null = null;
+    stats: LoaderStats = makeStats();
+    private aborted = false;
+
+    // hls.js requires constructor to accept HlsConfig even if unused
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    constructor(_config: HlsConfig) {}
+
+    load(
+      context: LoaderContext,
+      _config: LoaderConfiguration,
+      callbacks: LoaderCallbacks<LoaderContext>,
+    ): void {
+      this.context = context;
+      this.stats = makeStats();
+      this.aborted = false;
+      this.stats.loading.start = performance.now();
+
+      const headers: Record<string, string> = { ...(context.headers ?? {}) };
+
+      // NOTE: Channels DVR does not support byte-range requests on TS segments
+      // and returns HTTP 416. Omit the Range header entirely — HLS over TS
+      // never requires byte ranges, so this is safe.
+      // (fMP4 streams that genuinely need byte ranges would also need the DVR
+      // server to support them, which it doesn't.)
+
+      void (async () => {
+        try {
+          const res = await tauriFetch(context.url, { method: 'GET', headers });
+
+          if (this.aborted) return;
+
+          if (!res.ok) {
+            callbacks.onError(
+              { code: res.status, text: res.statusText },
+              context,
+              null,
+              this.stats,
+            );
+            return;
+          }
+
+          this.stats.loading.first = performance.now();
+
+          let data: string | ArrayBuffer;
+          if (context.responseType === 'arraybuffer') {
+            data = await res.arrayBuffer();
+          } else {
+            data = await res.text();
+          }
+
+          if (this.aborted) return;
+
+          const size = typeof data === 'string' ? data.length : data.byteLength;
+          this.stats.loaded = size;
+          this.stats.total = size;
+          this.stats.loading.end = performance.now();
+
+          callbacks.onSuccess(
+            { data, url: context.url },
+            this.stats,
+            context,
+            null,
+          );
+        } catch (e) {
+          if (this.aborted) return;
+          callbacks.onError(
+            { code: 0, text: String(e) },
+            context,
+            null,
+            this.stats,
+          );
+        }
+      })();
+    }
+
+    abort(): void {
+      this.aborted = true;
+      this.stats.aborted = true;
+    }
+
+    destroy(): void {
+      this.abort();
+    }
+  }
+
+  return TauriLoader;
+}

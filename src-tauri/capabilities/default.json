@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "http:default",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [
+        { "url": "http://192.168.3.150:8089/**" },
+        { "url": "http://*:8089/**" },
+        { "url": "http://**/**" },
+        { "url": "https://**/**" }
+      ]
+    }
+  ]
+}
