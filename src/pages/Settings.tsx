@@ -16,7 +16,16 @@ function areSameServers(a: ServerOption[], b: ServerOption[]): boolean {
 }
 
 export default function Settings() {
-  const { servers, setServers, storageSharePath, setStorageSharePath } = useStore();
+  const {
+    servers,
+    setServers,
+    storageSharePath,
+    setStorageSharePath,
+    preferRemux,
+    setPreferRemux,
+    diagnosticsEnabled,
+    setDiagnosticsEnabled,
+  } = useStore();
   const [draftServers, setDraftServers] = useState<ServerOption[]>(servers);
   const [shareDraft, setShareDraft] = useState(storageSharePath);
   const [saved, setSaved] = useState(false);
@@ -235,6 +244,32 @@ export default function Settings() {
             UNC or local path to the root of your DVR storage (where recordings are saved).
             Used to load <code>.srt</code> subtitle files alongside recordings.
             Leave blank to disable subtitle loading.
+          </p>
+        </section>
+
+        <section className="settings-section">
+          <h2 className="settings-section__title">Playback</h2>
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={preferRemux}
+              onChange={(e) => setPreferRemux(e.target.checked)}
+            />
+            <span>Prefer remux stream (best quality on local LAN)</span>
+          </label>
+          <p className="settings-hint">
+            Turn this off for remote internet playback if startup/reliability is better with standard transcode behavior.
+          </p>
+          <label className="settings-toggle settings-toggle--top-gap">
+            <input
+              type="checkbox"
+              checked={diagnosticsEnabled}
+              onChange={(e) => setDiagnosticsEnabled(e.target.checked)}
+            />
+            <span>Enable diagnostics tools in player</span>
+          </label>
+          <p className="settings-hint">
+            Shows the in-player report button for capturing bitrate/manifest details when troubleshooting playback.
           </p>
         </section>
 

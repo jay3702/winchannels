@@ -161,6 +161,22 @@
   color: #fff;
 }
 
+.video-report-btn {
+  background: rgba(0, 120, 212, 0.25);
+  border: 1px solid rgba(96, 176, 240, 0.7);
+  color: #cfe9ff;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.video-report-btn:hover {
+  background: rgba(0, 120, 212, 0.42);
+  color: #fff;
+}
+
 /* ── Commercial indicator bar ────────────────────────────────────────────── */
 
 .video-ad-bar {

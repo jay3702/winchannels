@@ -59,6 +59,16 @@ export async function buildTauriHlsLoader(): Promise<LoaderClass | undefined> {
 
       const headers: Record<string, string> = { ...(context.headers ?? {}) };
 
+      // Channels DVR chooses HLS encoder strategy based in part on client request
+      // fingerprinting. Mimic browser requests so server-side logic aligns with
+      // Channels Web UI playback behavior (often remux on capable clients).
+      if (!headers['User-Agent']) headers['User-Agent'] = navigator.userAgent;
+      if (!headers['Accept']) {
+        headers['Accept'] = context.responseType === 'arraybuffer'
+          ? '*/*'
+          : 'application/vnd.apple.mpegurl, application/x-mpegURL, */*';
+      }
+
       // NOTE: Channels DVR does not support byte-range requests on TS segments
       // and returns HTTP 416. Omit the Range header entirely — HLS over TS
       // never requires byte ranges, so this is safe.

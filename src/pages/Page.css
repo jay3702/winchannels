@@ -313,6 +313,23 @@
   color: #e07b00;
 }
 
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #c4c9d7;
+  font-size: 13px;
+}
+
+.settings-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.settings-toggle--top-gap {
+  margin-top: 10px;
+}
+
 .settings-test-result {
   margin: 12px 0 0;
   padding: 10px 14px;

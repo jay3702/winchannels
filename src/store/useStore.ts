@@ -4,6 +4,8 @@ import { getServerUrl, normalizeServerUrl, setServerUrl } from '../api/client';
 const SHARE_KEY = 'dvr_storage_share';
 const SERVERS_KEY = 'dvr_servers';
 const ACTIVE_SERVER_KEY = 'dvr_active_server_id';
+const PLAYBACK_REMUX_KEY = 'playback_prefer_remux';
+const DIAGNOSTICS_ENABLED_KEY = 'diagnostics_enabled';
 
 export interface ServerOption {
   id: string;
@@ -75,6 +77,12 @@ export interface AppState {
   // e.g. \\192.168.x.x\AllMedia\Channels  — used to find SRT sidecar files.
   storageSharePath: string;
   setStorageSharePath: (path: string) => void;
+
+  preferRemux: boolean;
+  setPreferRemux: (value: boolean) => void;
+
+  diagnosticsEnabled: boolean;
+  setDiagnosticsEnabled: (value: boolean) => void;
 
   // Currently playing item – fileId drives the VideoPlayer
   nowPlayingId: string | null;
@@ -164,6 +172,18 @@ export const useStore = create<AppState>((set) => ({
     const trimmed = path.trim().replace(/[/\\]+$/, '');
     localStorage.setItem(SHARE_KEY, trimmed);
     set({ storageSharePath: trimmed });
+  },
+
+  preferRemux: localStorage.getItem(PLAYBACK_REMUX_KEY) !== 'false',
+  setPreferRemux: (value: boolean) => {
+    localStorage.setItem(PLAYBACK_REMUX_KEY, String(value));
+    set({ preferRemux: value });
+  },
+
+  diagnosticsEnabled: localStorage.getItem(DIAGNOSTICS_ENABLED_KEY) === 'true',
+  setDiagnosticsEnabled: (value: boolean) => {
+    localStorage.setItem(DIAGNOSTICS_ENABLED_KEY, String(value));
+    set({ diagnosticsEnabled: value });
   },
 
   nowPlayingId: null,

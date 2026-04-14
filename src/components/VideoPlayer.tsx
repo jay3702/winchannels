@@ -51,11 +51,35 @@ const SKIP_BACK = 10;
 const RE_ENABLE_BEFORE = 30; // seek this many seconds before block start to re-enable auto-skip
 type CaptionMode = 'off' | 'broadcast' | 'srt';
 
+function formatBitrate(bitsPerSec: number | undefined): string {
+  if (!bitsPerSec || !Number.isFinite(bitsPerSec) || bitsPerSec <= 0) return 'n/a';
+  const mbps = bitsPerSec / 1_000_000;
+  if (mbps >= 1) return `${mbps.toFixed(2)} Mbps`;
+  return `${(bitsPerSec / 1000).toFixed(0)} kbps`;
+}
+
+function withQuery(url: string, key: string, value: string): string {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+}
+
 export default function VideoPlayer() {
-  const { nowPlayingId, nowPlayingKey, nowPlayingTitle, nowPlayingCommercials, nowPlayingFilePath, storageSharePath, stopPlayback, serverChangeVersion } = useStore();
+  const {
+    nowPlayingId,
+    nowPlayingKey,
+    nowPlayingTitle,
+    nowPlayingCommercials,
+    nowPlayingFilePath,
+    storageSharePath,
+    stopPlayback,
+    serverChangeVersion,
+    preferRemux,
+    diagnosticsEnabled,
+  } = useStore();
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const subtitleBlobUrl = useRef<string | null>(null);
+  const activeManifestUrlRef = useRef<string>('');
   // Flag to distinguish programmatic seeks from user seeks
   const isAutoSeekRef = useRef(false);
 
@@ -69,6 +93,7 @@ export default function VideoPlayer() {
   const [hasSrt, setHasSrt] = useState(false);
   const [hasBroadcast, setHasBroadcast] = useState(false);
   const [captionMode, setCaptionMode] = useState<CaptionMode>('off');
+  const [reportCopied, setReportCopied] = useState(false);
   const captionModeRef = useRef<CaptionMode>('off');
   captionModeRef.current = captionMode;
 
@@ -142,6 +167,8 @@ export default function VideoPlayer() {
     if (!video || !nowPlayingId) return;
 
     const src = streamUrl(nowPlayingId);
+    const remuxSrc = withQuery(src, 'encoder', 'remux');
+    activeManifestUrlRef.current = preferRemux ? remuxSrc : src;
 
     if (Hls.isSupported()) {
       let cancelled = false;
@@ -178,13 +205,28 @@ export default function VideoPlayer() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const hls = new Hls(hlsConfig as any);
         hlsRef.current = hls;
+        let usedRemuxManifest = preferRemux;
 
         hls.on(Hls.Events.ERROR, (_event, data) => {
           console.error('HLS error:', data.type, data.details, data.fatal,
             'url:', data.url, 'response:', data.response);
+
+          // Some DVR/server combinations may not honor encoder=remux. If the
+          // remux-preferred manifest fails to load, retry once with default URL.
+          if (
+            data.fatal &&
+            usedRemuxManifest &&
+            data.details === 'manifestLoadError'
+          ) {
+            usedRemuxManifest = false;
+            activeManifestUrlRef.current = src;
+            hls.loadSource(src);
+            return;
+          }
+
           if (data.fatal && !cancelled) {
             const status = data.response?.code ? ` (HTTP ${data.response.code})` : '';
-            const errUrl = data.url ?? src;
+            const errUrl = data.url ?? activeManifestUrlRef.current;
             setError(
               `Playback failed\n` +
               `Type: ${data.type}\n` +
@@ -194,17 +236,25 @@ export default function VideoPlayer() {
           }
         });
 
-        hls.loadSource(src);
+        hls.loadSource(preferRemux ? remuxSrc : src);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
           if (!cancelled) {
-            // Lock to the highest available quality level.
+            // Lock to the best available quality level by bitrate.
             // ABR relies on bandwidth samples from the loader; the Tauri HTTP
             // loader buffers the full response before returning it, so timing
             // data is unreliable and ABR incorrectly downgrades quality.
             // On a local network there's no reason to use ABR at all.
-            const highestLevel = data.levels.length - 1;
-            hls.currentLevel = highestLevel;
+            const bestLevelIndex = data.levels.reduce((bestIdx, level, idx, arr) => {
+              const best = arr[bestIdx];
+              const byBitrate = (level.bitrate ?? 0) - (best.bitrate ?? 0);
+              if (byBitrate !== 0) return byBitrate > 0 ? idx : bestIdx;
+
+              const levelPixels = (level.width ?? 0) * (level.height ?? 0);
+              const bestPixels = (best.width ?? 0) * (best.height ?? 0);
+              return levelPixels > bestPixels ? idx : bestIdx;
+            }, 0);
+            hls.currentLevel = bestLevelIndex;
             video.play().catch((e: Error) => { if (!cancelled) setError(e.message); });
             syncCaptionState(video);
 
@@ -274,7 +324,7 @@ export default function VideoPlayer() {
     } else {
       setError('HLS playback is not supported in this environment.');
     }
-  }, [nowPlayingKey]);
+  }, [nowPlayingKey, preferRemux]);
 
   // Track additions/removals happen asynchronously (especially broadcast CEA tracks).
   // Keep availability + current mode in sync whenever TextTracks changes.
@@ -377,6 +427,62 @@ export default function VideoPlayer() {
     applyCaptionMode(video, mode);
   }
 
+  async function copyPlaybackReport() {
+    if (!nowPlayingId) return;
+    const hls = hlsRef.current;
+    const video = videoRef.current;
+    const levelLines: string[] = [];
+    let selectedLine = 'Selected level: n/a';
+    let bandwidthLine = 'Estimated bandwidth: n/a';
+
+    if (hls) {
+      bandwidthLine = `Estimated bandwidth: ${formatBitrate(hls.bandwidthEstimate)}`;
+      const selected = hls.currentLevel;
+      selectedLine = `Selected level: ${selected >= 0 ? selected : 'auto'}`;
+
+      hls.levels.forEach((level, idx) => {
+        const levelDesc = [
+          `${idx}:`,
+          `${level.width || '?'}x${level.height || '?'}`,
+          formatBitrate(level.bitrate),
+          level.videoCodec ? `v=${level.videoCodec}` : '',
+          level.audioCodec ? `a=${level.audioCodec}` : '',
+        ].filter(Boolean).join(' ');
+        levelLines.push(levelDesc);
+      });
+
+      if (selected >= 0 && selected < hls.levels.length) {
+        const l = hls.levels[selected];
+        selectedLine = `Selected level: ${selected} (${l.width || '?'}x${l.height || '?'} @ ${formatBitrate(l.bitrate)})`;
+      }
+    }
+
+    const report = [
+      'WinChannels Playback Report',
+      `Time: ${new Date().toISOString()}`,
+      `Title: ${nowPlayingTitle}`,
+      `File ID: ${nowPlayingId}`,
+      `Prefer remux: ${preferRemux ? 'on' : 'off'}`,
+      `Manifest URL: ${activeManifestUrlRef.current || streamUrl(nowPlayingId)}`,
+      `Video element: ${video?.videoWidth || '?'}x${video?.videoHeight || '?'}`,
+      `Current time: ${Math.floor(currentTime)}s / ${Math.floor(duration)}s`,
+      selectedLine,
+      bandwidthLine,
+      'Levels:',
+      ...(levelLines.length > 0 ? levelLines : ['n/a']),
+    ].join('\n');
+
+    try {
+      await navigator.clipboard.writeText(report);
+      setReportCopied(true);
+      setTimeout(() => setReportCopied(false), 1800);
+      console.info(report);
+    } catch {
+      console.info(report);
+      setError('Could not copy report to clipboard. Report was printed to console.');
+    }
+  }
+
   if (!nowPlayingId) return null;
 
   return (
@@ -413,6 +519,11 @@ export default function VideoPlayer() {
           <button className="video-jump-btn" onClick={() => skipBy(SKIP_FWD)} title={`Forward ${SKIP_FWD} seconds`}>
             {SKIP_FWD}s ↻
           </button>
+          {diagnosticsEnabled && (
+            <button className="video-report-btn" onClick={copyPlaybackReport} title="Copy playback diagnostics report">
+              {reportCopied ? 'Copied' : 'Copy Report'}
+            </button>
+          )}
           <button className="video-close" onClick={stopPlayback} aria-label="Close player">
             ✕
           </button>
