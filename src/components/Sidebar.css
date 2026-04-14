@@ -18,6 +18,36 @@
   border-bottom: 1px solid #2a2a3a;
 }
 
+.sidebar__server-picker {
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid #2a2a3a;
+}
+
+.sidebar__server-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7d8699;
+  margin-bottom: 6px;
+}
+
+.sidebar__server-select {
+  width: 100%;
+  background: #1d2230;
+  border: 1px solid #354055;
+  color: #d0d7e6;
+  border-radius: 6px;
+  padding: 7px 8px;
+  font-size: 12px;
+}
+
+.sidebar__server-select:focus {
+  outline: none;
+  border-color: #60b0f0;
+}
+
 .sidebar__nav {
   list-style: none;
   padding: 8px 0;

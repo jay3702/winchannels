@@ -113,9 +113,13 @@ export default function RecentRecordings() {
   const [isResizing, setIsResizing] = useState(false);
   const navigate = useNavigate();
   const playItem = useStore((s: AppState) => s.playItem);
+  const serverChangeVersion = useStore((s: AppState) => s.serverChangeVersion);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setSelected(null);
     void (async () => {
       try {
         const [loadedRecordings, loadedChannels] = await Promise.all([
@@ -137,7 +141,7 @@ export default function RecentRecordings() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [serverChangeVersion]);
 
   const handleMouseDown = () => {
     setIsResizing(true);

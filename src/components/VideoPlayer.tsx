@@ -52,7 +52,7 @@ const RE_ENABLE_BEFORE = 30; // seek this many seconds before block start to re-
 type CaptionMode = 'off' | 'broadcast' | 'srt';
 
 export default function VideoPlayer() {
-  const { nowPlayingId, nowPlayingKey, nowPlayingTitle, nowPlayingCommercials, nowPlayingFilePath, storageSharePath, stopPlayback } = useStore();
+  const { nowPlayingId, nowPlayingKey, nowPlayingTitle, nowPlayingCommercials, nowPlayingFilePath, storageSharePath, stopPlayback, serverChangeVersion } = useStore();
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const subtitleBlobUrl = useRef<string | null>(null);
@@ -71,6 +71,10 @@ export default function VideoPlayer() {
   const [captionMode, setCaptionMode] = useState<CaptionMode>('off');
   const captionModeRef = useRef<CaptionMode>('off');
   captionModeRef.current = captionMode;
+
+  useEffect(() => {
+    dvrStorageRootCache = null;
+  }, [serverChangeVersion]);
 
   function getCaptionTracks(video: HTMLVideoElement) {
     const tracks = Array.from(video.textTracks);
@@ -143,9 +147,9 @@ export default function VideoPlayer() {
       let cancelled = false;
 
       void (async () => {
-        // In production use the cached Tauri loader (resolves instantly after first call).
-        // In dev there is no cross-origin restriction so we skip it entirely.
-        const tauriLoader = import.meta.env.PROD ? await getTauriLoader() : undefined;
+        // Use the Tauri loader whenever we're running inside Tauri (dev or prod)
+        // so HLS requests bypass browser CORS restrictions.
+        const tauriLoader = window.__TAURI_INTERNALS__ ? await getTauriLoader() : undefined;
         // Fetch DVR storage root for SRT path stripping (cached after first call)
         const dvrStorageRoot = storageSharePath ? await getDvrStorageRoot() : '';
 

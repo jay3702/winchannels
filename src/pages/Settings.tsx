@@ -1,46 +1,142 @@
-import { useState } from 'react';
-import { useStore } from '../store/useStore';
-import request, { normalizeServerUrl } from '../api/client';
+import { useEffect, useState } from 'react';
+import { useStore, type ServerOption } from '../store/useStore';
+import { normalizeServerUrl, requestFromServer } from '../api/client';
 import './Page.css';
 
+function makeServerId(): string {
+  return `srv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function areSameServers(a: ServerOption[], b: ServerOption[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((left, i) => {
+    const right = b[i];
+    return left.id === right.id && left.name === right.name && left.url === right.url;
+  });
+}
+
 export default function Settings() {
-  const { serverUrl, setServerUrl, storageSharePath, setStorageSharePath } = useStore();
-  const [draft, setDraft] = useState(serverUrl);
+  const { servers, setServers, storageSharePath, setStorageSharePath } = useStore();
+  const [draftServers, setDraftServers] = useState<ServerOption[]>(servers);
   const [shareDraft, setShareDraft] = useState(storageSharePath);
   const [saved, setSaved] = useState(false);
+  const [serverSaveError, setServerSaveError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
 
-  const normalized = normalizeServerUrl(draft);
-  const urlInvalid = draft.trim() !== '' && !/^https?:\/\/.+:\d+$/.test(normalized);
+  useEffect(() => {
+    setDraftServers(servers);
+  }, [servers]);
 
-  function save() {
-    const clean = normalizeServerUrl(draft);
-    if (!clean) return;
-    setServerUrl(clean);
-    setSaved(true);
+  function updateServer(serverId: string, field: 'name' | 'url', value: string) {
+    setDraftServers((prev) =>
+      prev.map((server) =>
+        server.id === serverId ? { ...server, [field]: value } : server
+      )
+    );
+    setSaved(false);
+    setServerSaveError(null);
+  }
+
+  function addServerRow() {
+    setDraftServers((prev) => [...prev, { id: makeServerId(), name: '', url: '' }]);
+    setSaved(false);
+    setServerSaveError(null);
+  }
+
+  function removeServerRow(serverId: string) {
+    setDraftServers((prev) => prev.filter((server) => server.id !== serverId));
+    setSaved(false);
+    setServerSaveError(null);
+  }
+
+  function validateServerDrafts(): ServerOption[] | null {
+    const validated: ServerOption[] = [];
+
+    for (const server of draftServers) {
+      const name = server.name.trim();
+      const rawUrl = server.url.trim();
+      if (!name && !rawUrl) continue;
+      if (!name || !rawUrl) {
+        setServerSaveError('Each server row must include both Name and URL.');
+        return null;
+      }
+
+      const normalized = normalizeServerUrl(rawUrl);
+      if (!/^https?:\/\/.+:\d+$/.test(normalized)) {
+        setServerSaveError(`Invalid URL for "${name}". Include scheme and port, e.g. http://192.168.1.4:8189`);
+        return null;
+      }
+
+      validated.push({ id: server.id || makeServerId(), name, url: normalized });
+    }
+
+    if (validated.length === 0) {
+      setServerSaveError('Add at least one server with Name and URL.');
+      return null;
+    }
+
+    return validated;
+  }
+
+  function saveServers(showSavedState = true): ServerOption[] | null {
+    const validated = validateServerDrafts();
+    if (!validated) return null;
+
+    if (!areSameServers(validated, servers)) {
+      setServers(validated);
+    }
+    setServerSaveError(null);
+    if (showSavedState) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
     setTestResult(null);
-    setTimeout(() => setSaved(false), 2000);
+    return validated;
   }
 
   async function testConnection() {
+    const validatedServers = saveServers(false);
+    if (!validatedServers) {
+      setTestResult('✗ Fix server table errors, then test again.');
+      return;
+    }
+
     setTesting(true);
     setTestResult(null);
     try {
-      const [episodes, movies, shows] = await Promise.all([
-        request<unknown[]>('/api/v1/episodes'),
-        request<unknown[]>('/api/v1/movies'),
-        request<unknown[]>('/api/v1/shows'),
-      ]);
-      setTestResult(
-        `✓ Connected!\n` +
-        `  Episodes: ${Array.isArray(episodes) ? episodes.length : 'bad format → ' + JSON.stringify(episodes).slice(0, 100)}\n` +
-        `  Movies:   ${Array.isArray(movies) ? movies.length : 'bad format'}\n` +
-        `  Shows:    ${Array.isArray(shows) ? shows.length : 'bad format'}`
-      );
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setTestResult(`✗ ${msg}`);
+      const lines: string[] = [];
+      let okCount = 0;
+
+      for (const server of validatedServers) {
+        lines.push(`[${server.name}] ${server.url}`);
+        try {
+          const [episodes, movies, shows] = await Promise.all([
+            requestFromServer<unknown[]>(server.url, '/api/v1/episodes'),
+            requestFromServer<unknown[]>(server.url, '/api/v1/movies'),
+            requestFromServer<unknown[]>(server.url, '/api/v1/shows'),
+          ]);
+
+          const ep = Array.isArray(episodes)
+            ? episodes.length
+            : `bad format -> ${JSON.stringify(episodes).slice(0, 80)}`;
+          const mv = Array.isArray(movies) ? movies.length : 'bad format';
+          const sh = Array.isArray(shows) ? shows.length : 'bad format';
+
+          lines.push(`  ✓ Episodes: ${ep}  Movies: ${mv}  Shows: ${sh}`);
+          okCount += 1;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          lines.push(`  ✗ ${msg}`);
+        }
+        lines.push('');
+      }
+
+      const allOk = okCount === validatedServers.length;
+      const header = allOk
+        ? `✓ Server checks complete (${okCount}/${validatedServers.length} passed)`
+        : `✗ Server checks complete (${okCount}/${validatedServers.length} passed)`;
+      setTestResult([header, '', ...lines].join('\n').trim());
     } finally {
       setTesting(false);
     }
@@ -54,31 +150,62 @@ export default function Settings() {
 
       <div className="settings-form">
         <section className="settings-section">
-          <h2 className="settings-section__title">Server</h2>
-          <label className="settings-label" htmlFor="server-url">
-            Channels DVR Server URL
-          </label>
-          <div className="settings-row">
-            <input
-              id="server-url"
-              className="settings-input"
-              type="url"
-              value={draft}
-              onChange={(e) => { setDraft(e.target.value); setSaved(false); }}
-              placeholder="http://192.168.3.150:8089"
-              spellCheck={false}
-            />
-            <button className="settings-save-btn" onClick={save}>
-              {saved ? '✓ Saved' : 'Save'}
+          <h2 className="settings-section__title">Servers</h2>
+          <table className="settings-table" aria-label="Configured DVR servers">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>URL</th>
+              </tr>
+            </thead>
+            <tbody>
+              {draftServers.map((server) => (
+                <tr key={server.id}>
+                  <td>
+                    <input
+                      className="settings-input"
+                      type="text"
+                      value={server.name}
+                      onChange={(e) => updateServer(server.id, 'name', e.target.value)}
+                      placeholder="Living Room"
+                      spellCheck={false}
+                    />
+                  </td>
+                  <td>
+                    <div className="settings-table-url-cell">
+                      <input
+                        className="settings-input"
+                        type="url"
+                        value={server.url}
+                        onChange={(e) => updateServer(server.id, 'url', e.target.value)}
+                        placeholder="http://192.168.1.4:8189"
+                        spellCheck={false}
+                      />
+                      <button
+                        className="settings-row-delete-btn"
+                        onClick={() => removeServerRow(server.id)}
+                        aria-label={`Remove ${server.name || 'server'} row`}
+                        title="Remove row"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="settings-row settings-row--top-gap">
+            <button className="settings-save-btn settings-save-btn--secondary" onClick={addServerRow}>
+              Add Server
+            </button>
+            <button className="settings-save-btn" onClick={() => saveServers()}>
+              {saved ? '✓ Saved' : 'Save Servers'}
             </button>
           </div>
-          {urlInvalid && (
-            <p className="settings-hint settings-hint--warn">
-              URL should be in the form <code>http://192.168.x.x:8089</code> — include the port number.
-            </p>
-          )}
+          {serverSaveError && <p className="settings-hint settings-hint--warn">{serverSaveError}</p>}
           <p className="settings-hint">
-            Change this if your server IP address changes. Reload the app after saving.
+            Add as many servers as you like. Use the server dropdown in the left sidebar to switch instantly.
           </p>
         </section>
 

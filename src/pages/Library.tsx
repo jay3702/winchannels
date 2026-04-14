@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchVideoGroups, fetchVideosInGroup } from '../api/library';
 import type { VideoGroup, Video } from '../api/types';
 import MediaCard from '../components/MediaCard';
+import { useStore } from '../store/useStore';
 import './Page.css';
 
 type SortMode = 'alpha' | 'date';
@@ -15,6 +16,7 @@ export default function Library() {
   const [loadingGroups, setLoadingGroups] = useState(true);
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const serverChangeVersion = useStore((s) => s.serverChangeVersion);
 
   const sortedGroups = useMemo(() => {
     const list = [...groups];
@@ -37,11 +39,15 @@ export default function Library() {
   }, [videos, videoSort]);
 
   useEffect(() => {
+    setLoadingGroups(true);
+    setError(null);
+    setSelectedGroup(null);
+    setVideos([]);
     fetchVideoGroups()
       .then(setGroups)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoadingGroups(false));
-  }, []);
+  }, [serverChangeVersion]);
 
   function selectGroup(group: VideoGroup) {
     setSelectedGroup(group);

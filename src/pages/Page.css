@@ -216,6 +216,51 @@
   gap: 8px;
 }
 
+.settings-row--top-gap {
+  margin-top: 10px;
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 4px;
+}
+
+.settings-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6f7a8e;
+  padding: 0 0 8px;
+}
+
+.settings-table td {
+  padding: 0 0 8px;
+  vertical-align: middle;
+}
+
+.settings-table-url-cell {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-row-delete-btn {
+  background: #2a2a3a;
+  border: 1px solid #444860;
+  border-radius: 6px;
+  color: #c8cedd;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings-row-delete-btn:hover {
+  background: #323a50;
+}
+
 .settings-input {
   flex: 1;
   background: #1a1a28;
@@ -247,6 +292,15 @@
 
 .settings-save-btn:hover {
   background: #106ebe;
+}
+
+.settings-save-btn--secondary {
+  background: #2a2f42;
+  color: #d4d9e4;
+}
+
+.settings-save-btn--secondary:hover {
+  background: #38415f;
 }
 
 .settings-hint {

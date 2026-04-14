@@ -10,9 +10,8 @@
     {
       "identifier": "http:allow-fetch",
       "allow": [
-        { "url": "http://*:8089/**" },
-        { "url": "http://**/**" },
-        { "url": "https://**/**" }
+        { "url": "http://*:*" },
+        { "url": "https://*:*" }
       ]
     }
   ]

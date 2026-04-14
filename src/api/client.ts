@@ -37,8 +37,12 @@ async function httpFetch(url: string): Promise<Response> {
   return fetch(url);
 }
 
-async function request<T>(path: string, params?: Record<string, string>): Promise<T> {
-  const base = getServerUrl();
+export async function requestFromServer<T>(
+  serverUrl: string,
+  path: string,
+  params?: Record<string, string>
+): Promise<T> {
+  const base = normalizeServerUrl(serverUrl);
   const url = new URL(path, base);
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -58,6 +62,10 @@ async function request<T>(path: string, params?: Record<string, string>): Promis
   return data;
 }
 
+async function request<T>(path: string, params?: Record<string, string>): Promise<T> {
+  return requestFromServer<T>(getServerUrl(), path, params);
+}
+
 export default request;
 
 // ── Streaming URL helpers ─────────────────────────────────────────────────
@@ -66,7 +74,9 @@ export default request;
 // In production use the full server URL with the TauriLoader.
 
 export function streamUrl(fileId: string): string {
-  if (import.meta.env.DEV) {
+  // In browser-only dev, keep using Vite proxy for convenience.
+  // In Tauri dev/prod, always use absolute URL so active server selection is honored.
+  if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
     return `/dvr/files/${fileId}/hls/master.m3u8`;
   }
   return `${getServerUrl()}/dvr/files/${fileId}/hls/master.m3u8`;

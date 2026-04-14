@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchMovies } from '../api/recordings';
 import type { Movie } from '../api/types';
 import MediaCard from '../components/MediaCard';
+import { useStore } from '../store/useStore';
 import './Page.css';
 
 type SortMode = 'alpha' | 'date';
@@ -12,13 +13,16 @@ export default function Movies() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unwatched'>('all');
   const [sort, setSort] = useState<SortMode>('date');
+  const serverChangeVersion = useStore((s) => s.serverChangeVersion);
 
   useEffect(() => {
+    setLoading(true);
+    setError(null);
     fetchMovies({ sort: 'date_added', order: 'desc' })
       .then(setMovies)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [serverChangeVersion]);
 
   const displayed = filter === 'unwatched' ? movies.filter((m) => !m.watched) : movies;
   const sortedDisplayed = useMemo(() => {

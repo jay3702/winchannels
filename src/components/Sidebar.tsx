@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { useStore } from '../store/useStore';
 import './Sidebar.css';
 
 const NAV_ITEMS = [
@@ -10,9 +11,31 @@ const NAV_ITEMS = [
 ];
 
 export default function Sidebar() {
+  const servers = useStore((s) => s.servers);
+  const activeServerId = useStore((s) => s.activeServerId);
+  const setActiveServer = useStore((s) => s.setActiveServer);
+
   return (
     <nav className="sidebar" aria-label="Main navigation">
       <div className="sidebar__brand">WinChannels</div>
+      <div className="sidebar__server-picker">
+        <label className="sidebar__server-label" htmlFor="sidebar-server-select">
+          Server
+        </label>
+        <select
+          id="sidebar-server-select"
+          className="sidebar__server-select"
+          value={activeServerId}
+          onChange={(e) => setActiveServer(e.target.value)}
+          aria-label="Select DVR server"
+        >
+          {servers.map((server) => (
+            <option key={server.id} value={server.id}>
+              {server.name}
+            </option>
+          ))}
+        </select>
+      </div>
       <ul className="sidebar__nav">
         {NAV_ITEMS.map(({ to, label, icon }) => (
           <li key={to}>

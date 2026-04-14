@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { fetchShows, fetchEpisodesForShow } from '../api/recordings';
 import type { Show, Episode } from '../api/types';
 import MediaCard from '../components/MediaCard';
+import { useStore } from '../store/useStore';
 import './Page.css';
 
 type SortMode = 'alpha' | 'date';
@@ -35,6 +36,8 @@ export default function TVShows() {
   const [error, setError] = useState<string | null>(null);
   const [epError, setEpError] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
+  const serverChangeVersion = useStore((s) => s.serverChangeVersion);
+  const requestedShowId = searchParams.get('showId');
 
   const sortedShows = useMemo(() => {
     const list = [...shows];
@@ -61,18 +64,22 @@ export default function TVShows() {
   }, [episodes, episodeSort]);
 
   useEffect(() => {
+    setLoadingShows(true);
+    setError(null);
+    setEpError(null);
+    setSelectedShow(null);
+    setEpisodes([]);
     fetchShows()
       .then((loaded) => {
         setShows(loaded);
-        const showId = searchParams.get('showId');
-        if (showId) {
-          const match = loaded.find((s) => s.id === showId);
+        if (requestedShowId) {
+          const match = loaded.find((s) => s.id === requestedShowId);
           if (match) selectShow(match);
         }
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoadingShows(false));
-  }, []);
+  }, [requestedShowId, serverChangeVersion]);
 
   function selectShow(show: Show) {
     setSelectedShow(show);
