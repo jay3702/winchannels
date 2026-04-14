@@ -8,6 +8,62 @@ import './Page.css';
 
 type SortMode = 'alpha' | 'date';
 
+function showIconUrl(show: Show): string | undefined {
+  const raw = (
+    (show as Show & { PreferredImage?: string }).PreferredImage ||
+    (show as Show & { Image?: string }).Image ||
+    (show as Show & { preferred_image?: string }).preferred_image ||
+    (show as Show & { image?: string }).image ||
+    show.image_url
+  );
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    url.searchParams.set('w', '80');
+    url.searchParams.set('h', '60');
+    return url.toString();
+  } catch {
+    return raw;
+  }
+}
+
+function labelKey(key: string): string {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function formatValue(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'number' && String(value).length >= 12) {
+    // Likely epoch ms timestamp.
+    return new Date(value).toLocaleString('en-US');
+  }
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function showAttributes(show: Show): Array<{ key: string; label: string; value: string }> {
+  const hidden = new Set(['image_url', 'Image', 'PreferredImage', 'image', 'preferred_image']);
+  const preferredOrder = ['id', 'name', 'summary', 'episode_count', 'number_unwatched', 'favorited', 'genres', 'created_at', 'updated_at'];
+
+  const entries = Object.entries(show)
+    .filter(([key, value]) => !hidden.has(key) && value != null && value !== '')
+    .map(([key, value]) => ({ key, label: labelKey(key), value: formatValue(value) }));
+
+  entries.sort((a, b) => {
+    const ai = preferredOrder.indexOf(a.key);
+    const bi = preferredOrder.indexOf(b.key);
+    const av = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
+    const bv = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
+    return av - bv || a.label.localeCompare(b.label);
+  });
+
+  return entries;
+}
+
 /** Build card title/subtitle with fallbacks for sparse DVR metadata. */
 function epLabel(ep: Episode): { title: string; subtitle?: string } {
   const hasS = ep.season_number != null && Number.isFinite(Number(ep.season_number));
@@ -29,14 +85,17 @@ export default function TVShows() {
   const [shows, setShows] = useState<Show[]>([]);
   const [selectedShow, setSelectedShow] = useState<Show | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [selectedEpisode, setSelectedEpisode] = useState<Episode | null>(null);
   const [showSort, setShowSort] = useState<SortMode>('alpha');
   const [episodeSort, setEpisodeSort] = useState<SortMode>('date');
   const [loadingShows, setLoadingShows] = useState(true);
   const [loadingEps, setLoadingEps] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [epError, setEpError] = useState<string | null>(null);
+  const [showMetaOpen, setShowMetaOpen] = useState(false);
   const [searchParams] = useSearchParams();
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
+  const playItem = useStore((s) => s.playItem);
   const requestedShowId = searchParams.get('showId');
 
   const sortedShows = useMemo(() => {
@@ -69,6 +128,8 @@ export default function TVShows() {
     setEpError(null);
     setSelectedShow(null);
     setEpisodes([]);
+    setSelectedEpisode(null);
+    setShowMetaOpen(false);
     fetchShows()
       .then((loaded) => {
         setShows(loaded);
@@ -84,11 +145,14 @@ export default function TVShows() {
   function selectShow(show: Show) {
     setSelectedShow(show);
     setEpisodes([]);
+    setSelectedEpisode(null);
+    setShowMetaOpen(false);
     setEpError(null);
     setLoadingEps(true);
     fetchEpisodesForShow(String(show.id))
       .then((eps) => {
         setEpisodes(eps);
+        setSelectedEpisode(eps[0] ?? null);
       })
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e);
@@ -122,7 +186,12 @@ export default function TVShows() {
                 className={`show-item ${selectedShow?.id === show.id ? 'show-item--active' : ''}`}
                 onClick={() => selectShow(show)}
               >
-                {show.name}
+                {showIconUrl(show) ? (
+                  <img className="show-item__thumb" src={showIconUrl(show)} alt="" aria-hidden="true" />
+                ) : (
+                  <span className="show-item__icon" aria-hidden="true">📺</span>
+                )}
+                <span className="show-item__name">{show.name}</span>
               </button>
             </li>
           ))}
@@ -149,6 +218,45 @@ export default function TVShows() {
             </header>
             {loadingEps && <p className="page__status">Loading episodes…</p>}
             {epError && <p className="page__error">⚠ {epError}</p>}
+
+            {selectedShow && (
+              <section className="media-detail media-detail--full">
+                {selectedShow.image_url && (
+                  <button
+                    className="media-detail__hero media-detail__hero-btn"
+                    onClick={() => setShowMetaOpen(true)}
+                    title="Show details"
+                  >
+                    <img src={selectedShow.image_url} alt={selectedShow.name} />
+                  </button>
+                )}
+                {selectedShow.summary && (
+                  <p className="media-detail__description">{selectedShow.summary}</p>
+                )}
+              </section>
+            )}
+
+            {selectedShow && showMetaOpen && (
+              <div className="media-modal-backdrop" onClick={() => setShowMetaOpen(false)}>
+                <div className="media-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="media-modal__header">
+                    <h3>{selectedShow.name} Details</h3>
+                    <button className="media-modal__close" onClick={() => setShowMetaOpen(false)} aria-label="Close details">
+                      ✕
+                    </button>
+                  </div>
+                  <dl className="media-attrs" aria-label="TV show details">
+                    {showAttributes(selectedShow).map((attr) => (
+                      <div key={attr.key} className="media-attrs__row">
+                        <dt>{attr.label}</dt>
+                        <dd>{attr.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              </div>
+            )}
+
             <div className="media-grid">
               {sortedEpisodes.map((ep) => {
                 const { title, subtitle } = epLabel(ep);
@@ -167,6 +275,15 @@ export default function TVShows() {
                     filePath={ep.path}
                     recordedAt={ep.created_at}
                     recordedAtFormat="datetime"
+                    onClick={() => setSelectedEpisode(ep)}
+                    onPlayAction={() => {
+                      const { title, subtitle } = epLabel(ep);
+                      const label = subtitle ? `${title} – ${subtitle}` : title;
+                      playItem(ep.id, label, ep.path, ep.commercials);
+                    }}
+                    playActionLabel="Play episode"
+                    selected={selectedEpisode?.id === ep.id}
+                    ariaLabel={`Select ${subtitle ? `${title} – ${subtitle}` : title}`}
                   />
                 );
               })}

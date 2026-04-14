@@ -6,7 +6,7 @@ const NAV_ITEMS = [
   { to: '/',         label: 'Recent',      icon: '🕐' },
   { to: '/tv',       label: 'TV Shows',    icon: '📺' },
   { to: '/movies',   label: 'Movies',      icon: '🎬' },
-  { to: '/library',  label: 'Library',     icon: '📁' },
+  { to: '/library',  label: 'Videos',      icon: '📁' },
   { to: '/settings', label: 'Settings',    icon: '⚙' },
 ];
 

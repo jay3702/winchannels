@@ -16,6 +16,11 @@ interface MediaCardProps {
   filePath?: string;
   recordedAt?: number;
   recordedAtFormat?: 'time' | 'datetime';
+  onClick?: () => void;
+  selected?: boolean;
+  ariaLabel?: string;
+  onPlayAction?: () => void;
+  playActionLabel?: string;
 }
 
 function formatDuration(seconds: number): string {
@@ -52,6 +57,11 @@ export default function MediaCard({
   filePath,
   recordedAt,
   recordedAtFormat = 'time',
+  onClick,
+  selected = false,
+  ariaLabel,
+  onPlayAction,
+  playActionLabel = 'Play',
 }: MediaCardProps) {
   const { playItem } = useStore();
   const serverUrl = getServerUrl();
@@ -64,18 +74,33 @@ export default function MediaCard({
 
   const progress = duration > 0 ? Math.min((playbackTime / duration) * 100, 100) : 0;
   const label = subtitle ? `${title} – ${subtitle}` : title;
+  const handleClick = onClick ?? (() => playItem(id, label, filePath, commercials));
+  const resolvedAriaLabel = ariaLabel ?? (onClick ? `Select ${label}` : `Play ${label}`);
 
   return (
     <button
-      className={`media-card ${watched ? 'media-card--watched' : ''}`}
-      onClick={() => playItem(id, label, filePath, commercials)}
-      aria-label={`Play ${label}`}
+      className={`media-card ${watched ? 'media-card--watched' : ''} ${selected ? 'media-card--selected' : ''}`}
+      onClick={handleClick}
+      aria-label={resolvedAriaLabel}
     >
       <div className="media-card__art">
         {resolvedThumb ? (
           <img src={resolvedThumb} alt="" draggable={false} />
         ) : (
           <div className="media-card__art-placeholder">▶</div>
+        )}
+        {onPlayAction && (
+          <button
+            className="media-card__play-action"
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlayAction();
+            }}
+            aria-label={`${playActionLabel} ${label}`}
+            title={playActionLabel}
+          >
+            ▶
+          </button>
         )}
         {badge && <span className="media-card__badge">{badge}</span>}
         {watched && <span className="media-card__watched-dot" aria-label="Watched" />}

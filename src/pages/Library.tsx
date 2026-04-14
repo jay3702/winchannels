@@ -62,7 +62,7 @@ export default function Library() {
   return (
     <div className="page page--split">
       <aside className="show-list">
-        <h2 className="show-list__title">Library</h2>
+        <h2 className="show-list__title">Videos</h2>
         <div className="show-list__sort">
           <select
             className="page-sort-select"
