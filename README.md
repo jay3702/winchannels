@@ -2,6 +2,18 @@
 
 WinChannels is a native Windows desktop client for Channels DVR.
 
+## Positioning
+
+WinChannels is a desktop companion app for everyday Channels DVR viewing, not a living-room HTPC frontend.
+
+Its intent is to provide an easier-to-use alternative to the Channels administrative web interface for non-technical users.
+
+## Non-goals
+
+- This project is not designed as a remote-control-first, 10-foot TV interface.
+- This project is not trying to replace dedicated HTPC/living-room player experiences.
+- This project prioritizes simple desktop workflows (mouse/keyboard, clear settings, and caption handling).
+
 ## Quick Start
 
 1. Download the latest installer from the [Releases page](https://github.com/jay3702/winchannels/releases/latest):
