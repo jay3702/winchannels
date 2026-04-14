@@ -120,14 +120,6 @@ If both are available, you can switch between them from the player controls.
 
 ## Troubleshooting
 
-### Start menu icon still old after update
-
-If Windows shows an old icon after an upgrade:
-
-- Install a newer app version (version bump helps refresh installer metadata)
-- Re-pin the app in Start menu
-- Ensure no stale duplicate shortcuts exist in user Start menu folders
-
 ### Can stream video but no SRT captions
 
 - Verify `Storage Share Path` points to the correct DVR root share
