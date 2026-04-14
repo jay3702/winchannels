@@ -25,11 +25,11 @@ export default defineConfig(async () => ({
         }
       : undefined,    proxy: {
       "/api": {
-        target: "http://192.168.3.150:8089",
+        target: process.env.CHANNELS_DVR_URL ?? "http://localhost:8089",
         changeOrigin: true,
       },
       "/dvr": {
-        target: "http://192.168.3.150:8089",
+        target: process.env.CHANNELS_DVR_URL ?? "http://localhost:8089",
         changeOrigin: true,
       },
     },    watch: {

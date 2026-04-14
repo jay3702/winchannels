@@ -8,7 +8,7 @@ export interface AppState {
   setServerUrl: (url: string) => void;
 
   // UNC / local path to the root of the DVR storage share, e.g.
-  // \\192.168.3.150\AllMedia\Channels  — used to find SRT sidecar files.
+  // e.g. \\192.168.x.x\AllMedia\Channels  — used to find SRT sidecar files.
   storageSharePath: string;
   setStorageSharePath: (path: string) => void;
 

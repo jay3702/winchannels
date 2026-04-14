@@ -1,7 +1,7 @@
 // ── Base API Client ────────────────────────────────────────────────────────
 // Server URL is read from localStorage so Settings page can update it.
 
-const DEFAULT_SERVER = 'http://192.168.3.150:8089';
+const DEFAULT_SERVER = 'http://localhost:8089';
 
 /**
  * Normalize a server URL: add http:// scheme if missing, fix single-slash

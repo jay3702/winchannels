@@ -10,7 +10,6 @@
     {
       "identifier": "http:allow-fetch",
       "allow": [
-        { "url": "http://192.168.3.150:8089/**" },
         { "url": "http://*:8089/**" },
         { "url": "http://**/**" },
         { "url": "https://**/**" }
