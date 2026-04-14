@@ -313,6 +313,20 @@
   color: #e07b00;
 }
 
+.settings-hint--about {
+  color: #a8b0c2;
+  margin-top: 4px;
+}
+
+.settings-link {
+  color: #60b0f0;
+  text-decoration: none;
+}
+
+.settings-link:hover {
+  text-decoration: underline;
+}
+
 .settings-toggle {
   display: flex;
   align-items: center;

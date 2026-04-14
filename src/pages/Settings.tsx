@@ -284,6 +284,16 @@ export default function Settings() {
             </pre>
           )}
         </section>
+
+        <section className="settings-section">
+          <h2 className="settings-section__title">About</h2>
+          <p className="settings-hint settings-hint--about">
+            <strong>WinChannels</strong> v{__APP_VERSION__}
+          </p>
+          <p className="settings-hint settings-hint--about">
+            Repository: <a className="settings-link" href={__APP_REPOSITORY_URL__} target="_blank" rel="noreferrer">{__APP_REPOSITORY_URL__}</a>
+          </p>
+        </section>
       </div>
     </div>
   );
