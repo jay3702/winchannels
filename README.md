@@ -149,4 +149,4 @@ If Windows shows an old icon after an upgrade:
 
 ## License
 
-No license file is currently included in this repository.
+[MIT](LICENSE)
