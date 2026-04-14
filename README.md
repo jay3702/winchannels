@@ -2,6 +2,17 @@
 
 WinChannels is a native Windows desktop client for Channels DVR.
 
+## Quick Start
+
+1. Download the latest installer from the [Releases page](https://github.com/jay3702/winchannels/releases/latest):
+	- **MSI** — recommended for most users
+	- **EXE** — NSIS installer, useful if MSI is blocked by policy
+2. Run the installer and launch WinChannels from the Start menu.
+3. Open **Settings** and enter your Channels DVR server URL (e.g. `http://192.168.x.x:8089`).
+4. Optionally set the **Storage Share Path** to enable SRT sidecar captions.
+
+## Features
+
 It gives you a simple TV-style experience for browsing and watching your DVR content, with support for:
 
 - Recent recordings
