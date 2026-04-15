@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import VideoPlayer from './components/VideoPlayer';
 import RecentRecordings from './pages/RecentRecordings';
+import Live from './pages/Live';
 import TVShows from './pages/TVShows';
 import Movies from './pages/Movies';
 import Library from './pages/Library';
@@ -16,6 +17,7 @@ function App() {
         <main className="app-main">
           <Routes>
             <Route path="/"         element={<RecentRecordings />} />
+            <Route path="/live"     element={<Live />} />
             <Route path="/tv"       element={<TVShows />} />
             <Route path="/movies"   element={<Movies />} />
             <Route path="/library"  element={<Library />} />

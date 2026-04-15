@@ -90,7 +90,8 @@ export interface AppState {
   nowPlayingTitle: string;
   nowPlayingFilePath: string;       // relative path from DVR API, e.g. TV/Show/Episode.mpg
   nowPlayingCommercials: number[];   // flat [start, end, start, end, …] in seconds
-  playItem: (fileId: string, title: string, filePath?: string, commercials?: number[]) => void;
+  nowPlayingManifestUrl: string;
+  playItem: (fileId: string, title: string, filePath?: string, commercials?: number[], manifestUrl?: string) => void;
   stopPlayback: () => void;
 }
 
@@ -113,6 +114,7 @@ export const useStore = create<AppState>((set) => ({
         nowPlayingTitle: '',
         nowPlayingFilePath: '',
         nowPlayingCommercials: [],
+        nowPlayingManifestUrl: '',
       };
     });
   },
@@ -143,6 +145,7 @@ export const useStore = create<AppState>((set) => ({
         nowPlayingTitle: '',
         nowPlayingFilePath: '',
         nowPlayingCommercials: [],
+        nowPlayingManifestUrl: '',
       };
     });
   },
@@ -163,6 +166,7 @@ export const useStore = create<AppState>((set) => ({
         nowPlayingTitle: '',
         nowPlayingFilePath: '',
         nowPlayingCommercials: [],
+        nowPlayingManifestUrl: '',
       };
     });
   },
@@ -191,13 +195,15 @@ export const useStore = create<AppState>((set) => ({
   nowPlayingTitle: '',
   nowPlayingFilePath: '',
   nowPlayingCommercials: [],
-  playItem: (fileId, title, filePath = '', commercials = []) =>
+  nowPlayingManifestUrl: '',
+  playItem: (fileId, title, filePath = '', commercials = [], manifestUrl = '') =>
     set(s => ({
       nowPlayingId: fileId,
       nowPlayingKey: s.nowPlayingKey + 1,
       nowPlayingTitle: title,
       nowPlayingFilePath: filePath,
       nowPlayingCommercials: commercials,
+      nowPlayingManifestUrl: manifestUrl,
     })),
-  stopPlayback: () => set({ nowPlayingId: null, nowPlayingTitle: '', nowPlayingFilePath: '', nowPlayingCommercials: [] }),
+  stopPlayback: () => set({ nowPlayingId: null, nowPlayingTitle: '', nowPlayingFilePath: '', nowPlayingCommercials: [], nowPlayingManifestUrl: '' }),
 }));

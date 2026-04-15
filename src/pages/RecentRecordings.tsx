@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getServerUrl } from '../api/client';
 import { fetchChannels, fetchRecordings } from '../api/recordings';
 import type { Channel, Recording } from '../api/types';
 import { useStore } from '../store/useStore';
 import type { AppState } from '../store/useStore';
+import { applyLogoFallback, buildChannelLogoMap, logoForChannelKey } from '../lib/channelLogos';
 import './Page.css';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -58,47 +58,8 @@ function recLabel(rec: Recording) {
   return rec.episode_title ? `${rec.title} — "${rec.episode_title}"` : rec.title;
 }
 
-function buildChannelLogoMap(channels: Channel[]): Record<string, string> {
-  const server = getServerUrl();
-  const map: Record<string, string> = {};
-  for (const ch of channels) {
-    const logo = ch.logo_url?.trim() || (ch.station_id
-      ? `${server}/tmsimg/assets/s${ch.station_id}_ll_h15_ab.png?w=360&h=270`
-      : undefined);
-    if (!logo) continue;
-    const keys = [ch.id, ch.name, ch.number]
-      .filter((k): k is string => Boolean(k && k.trim()))
-      .map((k) => k.trim());
-    for (const key of keys) {
-      map[key] = logo;
-      map[key.toLowerCase()] = logo;
-    }
-  }
-  return map;
-}
-
 function logoForRecording(rec: Recording, logoMap: Record<string, string>): string | null {
-  const key = (rec.channel ?? '').trim();
-  if (!key) return null;
-  return logoMap[key] ?? logoMap[key.toLowerCase()] ?? null;
-}
-
-function nextLogoVariant(url: string): string | null {
-  const m = url.match(/_ll_h15_(ab|ac|aa)\.png\?w=360&h=270$/i);
-  if (!m) return null;
-  const current = m[1].toLowerCase();
-  const next = current === 'ab' ? 'ac' : current === 'ac' ? 'aa' : null;
-  return next ? url.replace(/_ll_h15_(ab|ac|aa)\.png\?w=360&h=270$/i, `_ll_h15_${next}.png?w=360&h=270`) : null;
-}
-
-function handleLogoError(e: React.SyntheticEvent<HTMLImageElement>) {
-  const img = e.currentTarget;
-  const next = nextLogoVariant(img.src);
-  if (next && next !== img.src) {
-    img.src = next;
-    return;
-  }
-  img.style.display = 'none';
+  return logoForChannelKey(rec.channel, logoMap);
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -197,7 +158,7 @@ export default function RecentRecordings() {
                             src={logoUrl}
                             alt={rec.channel}
                             className="rec-item__logo"
-                            onError={handleLogoError}
+                            onError={(e) => applyLogoFallback(e.currentTarget)}
                           />
                         )}
                         <span className="rec-item__title">{recLabel(rec)}</span>

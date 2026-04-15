@@ -70,6 +70,7 @@ export default function VideoPlayer() {
     nowPlayingTitle,
     nowPlayingCommercials,
     nowPlayingFilePath,
+    nowPlayingManifestUrl,
     storageSharePath,
     stopPlayback,
     serverChangeVersion,
@@ -166,7 +167,7 @@ export default function VideoPlayer() {
     setError(null);
     if (!video || !nowPlayingId) return;
 
-    const src = streamUrl(nowPlayingId);
+    const src = nowPlayingManifestUrl || streamUrl(nowPlayingId);
     const remuxSrc = withQuery(src, 'encoder', 'remux');
     activeManifestUrlRef.current = preferRemux ? remuxSrc : src;
 
@@ -463,7 +464,7 @@ export default function VideoPlayer() {
       `Title: ${nowPlayingTitle}`,
       `File ID: ${nowPlayingId}`,
       `Prefer remux: ${preferRemux ? 'on' : 'off'}`,
-      `Manifest URL: ${activeManifestUrlRef.current || streamUrl(nowPlayingId)}`,
+      `Manifest URL: ${activeManifestUrlRef.current || nowPlayingManifestUrl || streamUrl(nowPlayingId)}`,
       `Video element: ${video?.videoWidth || '?'}x${video?.videoHeight || '?'}`,
       `Current time: ${Math.floor(currentTime)}s / ${Math.floor(duration)}s`,
       selectedLine,

@@ -4,6 +4,7 @@ import './Sidebar.css';
 
 const NAV_ITEMS = [
   { to: '/',         label: 'Recent',      icon: '🕐' },
+  { to: '/live',     label: 'Live',        icon: '📡' },
   { to: '/tv',       label: 'TV Shows',    icon: '📺' },
   { to: '/movies',   label: 'Movies',      icon: '🎬' },
   { to: '/library',  label: 'Videos',      icon: '📁' },
