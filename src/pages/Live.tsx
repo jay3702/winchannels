@@ -411,7 +411,7 @@ export default function Live() {
       list = list.filter((row) => row.sourceFilterLabel === wanted);
     }
 
-    if (filterMode === 'all') {
+    if (filterMode === 'all' || filterMode === 'favorites') {
       list = dedupeRows(list);
     }
 

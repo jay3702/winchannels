@@ -4,6 +4,13 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-15 - Fix duplicate channels in Favorites view
+
+- Request: favorites list showed the same channel multiple times when it was present across multiple tuner sources.
+- Rationale: `dedupeRows` was only applied for the `all` filter mode; the `favorites` filter left all per-source rows in the list.
+- Solution: extended the `dedupeRows` call to also run when `filterMode === 'favorites'`.
+- Validation: build passes; favorites view now shows each channel once.
+
 ### 2026-04-15 - Version bump to 1.1.0 for release parity
 
 - Request: bump app version to `1.1` and ensure installer artifacts carry the same version.
