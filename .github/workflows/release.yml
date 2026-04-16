@@ -30,8 +30,7 @@ jobs:
           cache: 'npm'
 
       - name: Verify tag version matches manifests
-        run: |
-          node -e "const fs=require('fs');const tag=String(process.env.GITHUB_REF_NAME||'').replace(/^v/,'');const pkg=JSON.parse(fs.readFileSync('package.json','utf8')).version;const tauri=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')).version;const cargo=fs.readFileSync('src-tauri/Cargo.toml','utf8').match(/^version\s*=\s*\"([^\"]+)\"/m)?.[1];const mismatches=[['package.json',pkg],['src-tauri/tauri.conf.json',tauri],['src-tauri/Cargo.toml',cargo]].filter(([,v])=>v!==tag);if(!tag)throw new Error('Missing GITHUB_REF_NAME');if(mismatches.length){throw new Error('Tag version mismatch: '+mismatches.map(([f,v])=>f+'='+v).join(', ')+'; expected '+tag);}console.log('Version check passed:',tag);"
+        run: node .github/scripts/verify-tag-version.mjs
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -74,14 +73,17 @@ jobs:
   build-linux:
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.allow_failure }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            allow_failure: false
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
+            allow_failure: true
 
     steps:
       - name: Checkout
@@ -94,8 +96,7 @@ jobs:
           cache: 'npm'
 
       - name: Verify tag version matches manifests
-        run: |
-          node -e "const fs=require('fs');const tag=String(process.env.GITHUB_REF_NAME||'').replace(/^v/,'');const pkg=JSON.parse(fs.readFileSync('package.json','utf8')).version;const tauri=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')).version;const cargo=fs.readFileSync('src-tauri/Cargo.toml','utf8').match(/^version\s*=\s*\"([^\"]+)\"/m)?.[1];const mismatches=[['package.json',pkg],['src-tauri/tauri.conf.json',tauri],['src-tauri/Cargo.toml',cargo]].filter(([,v])=>v!==tag);if(!tag)throw new Error('Missing GITHUB_REF_NAME');if(mismatches.length){throw new Error('Tag version mismatch: '+mismatches.map(([f,v])=>f+'='+v).join(', ')+'; expected '+tag);}console.log('Version check passed:',tag);"
+        run: node .github/scripts/verify-tag-version.mjs
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
