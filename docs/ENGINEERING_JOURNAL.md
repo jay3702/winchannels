@@ -4,6 +4,18 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-16 - Release publish fix for source-only tag releases
+
+- Request: resolve repeated release workflow failures where tagged releases showed only source archives.
+- Rationale: installer assets must publish reliably for both x64 and ARM64 builds.
+- Symptoms discovered:
+  - `Publish GitHub Release` step failed with `Resource not accessible by integration` on release notes generation API
+  - release page remained with source-only assets
+- Solution:
+  - updated release workflow to stop calling `generate_release_notes` and use explicit `GITHUB_TOKEN` in `softprops/action-gh-release`
+- Validation:
+  - workflow file updated; ready for retrigger via tag push
+
 ### 2026-04-15 - Fullscreen label and stats hotkey toggle corrections
 
 - Request: fix fullscreen button text showing `Exit Fullscreen` at startup and make stats hotkey toggle persist instead of only while key is held.
