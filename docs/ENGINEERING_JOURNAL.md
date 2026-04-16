@@ -4,6 +4,17 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-16 - Version metadata bump to 1.1.3 for installer filenames
+
+- Request: ensure release installer filenames show `1.1.3` instead of `1.1.1`.
+- Rationale: tagged release version and generated installer version should match for support and distribution clarity.
+- Symptoms discovered:
+  - `v1.1.3` release assets were published but filenames were still `WinChannels_1.1.1_...`
+- Solution:
+  - bumped version metadata to `1.1.3` in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and root package entry in `src-tauri/Cargo.lock`
+- Validation:
+  - Problems check passes for updated files; ready for release rebuild via tag push
+
 ### 2026-04-16 - Release asset upload path fix
 
 - Request: fix tagged releases that completed workflow runs but still showed source-only assets.
