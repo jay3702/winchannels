@@ -4,6 +4,19 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-16 - v1.1.5 workflow failure recovery via version correction
+
+- Request: fix release workflow failures after the new gating step blocked compilation.
+- Rationale: the version gate should prevent mixed-version assets, but the next release tag must match manifests exactly so publishing can proceed.
+- Symptoms discovered:
+  - all `v1.1.5` build jobs failed in `Verify tag version matches manifests`
+  - manifests were still `1.1.4` while the pushed tag was `v1.1.5`
+- Solution:
+  - bumped release-driving metadata to `1.1.6` in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`
+  - prepared next release to use a fresh matching tag rather than mutating the failed `v1.1.5` run again
+- Validation:
+  - local problems check to confirm updated files remain valid before retriggering release
+
 ### 2026-04-16 - Latest release pointer recovery and resilient release gating
 
 - Request: ensure `/releases/latest` points to a release with install packages instead of stale source-only `v1.1.2`.
