@@ -44,10 +44,18 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Install LLVM (ARM64 cross-compile)
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        run: choco install llvm --no-progress -y
+
       - name: Install npm dependencies
         run: npm ci
 
       - name: Build Tauri app
+        env:
+          CC_aarch64_pc_windows_msvc: clang-cl
+          CXX_aarch64_pc_windows_msvc: clang-cl
+          AR_aarch64_pc_windows_msvc: llvm-lib
         run: npm run tauri build -- --target ${{ matrix.target }}
 
       - name: Upload release bundles
