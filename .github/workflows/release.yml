@@ -29,6 +29,10 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Verify tag version matches manifests
+        run: |
+          node -e "const fs=require('fs');const tag=String(process.env.GITHUB_REF_NAME||'').replace(/^v/,'');const pkg=JSON.parse(fs.readFileSync('package.json','utf8')).version;const tauri=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')).version;const cargo=fs.readFileSync('src-tauri/Cargo.toml','utf8').match(/^version\s*=\s*\"([^\"]+)\"/m)?.[1];const mismatches=[['package.json',pkg],['src-tauri/tauri.conf.json',tauri],['src-tauri/Cargo.toml',cargo]].filter(([,v])=>v!==tag);if(!tag)throw new Error('Missing GITHUB_REF_NAME');if(mismatches.length){throw new Error('Tag version mismatch: '+mismatches.map(([f,v])=>f+'='+v).join(', ')+'; expected '+tag);}console.log('Version check passed:',tag);"
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -88,6 +92,10 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      - name: Verify tag version matches manifests
+        run: |
+          node -e "const fs=require('fs');const tag=String(process.env.GITHUB_REF_NAME||'').replace(/^v/,'');const pkg=JSON.parse(fs.readFileSync('package.json','utf8')).version;const tauri=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')).version;const cargo=fs.readFileSync('src-tauri/Cargo.toml','utf8').match(/^version\s*=\s*\"([^\"]+)\"/m)?.[1];const mismatches=[['package.json',pkg],['src-tauri/tauri.conf.json',tauri],['src-tauri/Cargo.toml',cargo]].filter(([,v])=>v!==tag);if(!tag)throw new Error('Missing GITHUB_REF_NAME');if(mismatches.length){throw new Error('Tag version mismatch: '+mismatches.map(([f,v])=>f+'='+v).join(', ')+'; expected '+tag);}console.log('Version check passed:',tag);"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

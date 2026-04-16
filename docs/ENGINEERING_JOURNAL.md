@@ -4,6 +4,18 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-16 - Enforced build/version increment consistency
+
+- Request: ensure build number increments on all release assets.
+- Rationale: release tags and generated installer/package filenames must stay in sync to avoid mixed-version artifacts.
+- Symptoms discovered:
+  - previous tags could produce assets with older embedded app version when metadata had not been bumped first
+- Solution:
+  - bumped app version metadata from `1.1.3` to `1.1.4` in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`
+  - added release workflow gate in both Windows and Linux build jobs to verify `GITHUB_REF_NAME` tag version matches manifest versions before building
+- Validation:
+  - local problems check passes for updated files; next release tag will fail fast if version metadata is not incremented consistently
+
 ### 2026-04-16 - Linux release pipeline for x64 and ARM64
 
 - Request: attempt Linux builds for x64 and ARM64 to support Debian/Ubuntu-style distributions.
