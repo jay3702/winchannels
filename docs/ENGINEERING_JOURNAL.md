@@ -4,6 +4,19 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-16 - Release asset upload path fix
+
+- Request: fix tagged releases that completed workflow runs but still showed source-only assets.
+- Rationale: successful build jobs should always result in attached installer assets on the GitHub Release.
+- Symptoms discovered:
+  - latest `Release` workflow runs reported success across build/upload/download/publish steps
+  - `v1.1.2` release still had zero attached assets
+- Solution:
+  - updated release publish globs to recursive patterns (`release-artifacts/**/*.msi`, `release-artifacts/**/*-setup.exe`) to match downloaded artifact subfolder layouts
+  - added explicit artifact listing step before publish for visibility in workflow logs
+- Validation:
+  - workflow syntax/Problems checks pass locally; ready for retrigger on next tag
+
 ### 2026-04-16 - Release publish fix for source-only tag releases
 
 - Request: resolve repeated release workflow failures where tagged releases showed only source archives.

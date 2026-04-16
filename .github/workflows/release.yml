@@ -78,10 +78,16 @@ jobs:
           merge-multiple: true
           path: release-artifacts
 
+      - name: List downloaded artifacts
+        shell: pwsh
+        run: |
+          Write-Host "Downloaded files:"
+          Get-ChildItem -Path release-artifacts -Recurse | ForEach-Object { Write-Host $_.FullName }
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            release-artifacts/*.msi
-            release-artifacts/*-setup.exe
+            release-artifacts/**/*.msi
+            release-artifacts/**/*-setup.exe
