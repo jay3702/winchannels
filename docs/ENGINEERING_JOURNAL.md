@@ -4,6 +4,20 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-16 - Linux release pipeline for x64 and ARM64
+
+- Request: attempt Linux builds for x64 and ARM64 to support Debian/Ubuntu-style distributions.
+- Rationale: publish native Linux install assets alongside Windows to broaden supported client platforms.
+- Symptoms discovered:
+  - existing release workflow only produced Windows (`msi`/`nsis`) artifacts
+- Solution:
+  - split release build jobs into `build-windows` and `build-linux`
+  - added Linux matrix targets for `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`
+  - installed required Linux Tauri build dependencies on runner
+  - added Linux artifact upload (`.deb`, `.AppImage`) and expanded publish globs to include Linux assets
+- Validation:
+  - workflow syntax/Problems checks pass locally; release run required to confirm runner availability and resulting artifacts
+
 ### 2026-04-16 - Version metadata bump to 1.1.3 for installer filenames
 
 - Request: ensure release installer filenames show `1.1.3` instead of `1.1.1`.
