@@ -4,6 +4,85 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-15 - Fullscreen label and stats hotkey toggle corrections
+
+- Request: fix fullscreen button text showing `Exit Fullscreen` at startup and make stats hotkey toggle persist instead of only while key is held.
+- Rationale: diagnostics controls should accurately reflect state and behave predictably during playback.
+- Symptoms discovered:
+  - fullscreen control could render the exit label before entering fullscreen
+  - stats overlay toggled on keydown and back off on keyup, causing press-and-hold behavior
+- Solution:
+  - changed overlay fullscreen state check to require a non-null fullscreen element match
+  - removed keyup listener from stats hotkey path so `Shift+S` toggles only on keydown
+- Validation:
+  - TypeScript/Problems check reports no errors in updated files
+
+### 2026-04-15 - Fullscreen-safe stats hotkey and player fullscreen control
+
+- Request: make `Shift+S` reliably toggle stats while fullscreen.
+- Rationale: native video fullscreen can intercept some keys before app-level handlers, causing diagnostics hotkeys to appear broken.
+- Symptoms discovered:
+  - even after expanding listeners, `Shift+S` still did not always fire when using native video fullscreen controls
+- Solution:
+  - hardened hotkey matching (`code === KeyS` with shift fallback to key value) and added capture listeners on window/document
+  - added app-controlled fullscreen toggle on the player overlay so keyboard events stay inside app-managed DOM focus
+  - focused overlay container on entering overlay fullscreen to keep shortcut handling reliable
+- Validation:
+  - TypeScript/Problems check reports no errors in updated files
+
+### 2026-04-15 - Stats hotkey support in fullscreen playback
+
+- Request: make the diagnostics stats hotkey work while video is in fullscreen mode.
+- Rationale: fullscreen troubleshooting should not require exiting fullscreen to toggle diagnostics.
+- Symptoms discovered:
+  - `Shift+S` worked in windowed playback but could miss key events in fullscreen focus contexts
+- Solution:
+  - expanded key listeners from window-only to window + document capture + video element listeners
+  - retained diagnostics-enabled and active-playback gating for shortcut behavior
+- Validation:
+  - TypeScript/Problems check reports no errors in updated files
+
+### 2026-04-15 - Stats overlay keyboard toggle
+
+- Request: add a keyboard shortcut for toggling player diagnostics stats.
+- Rationale: quick in-playback toggling is faster than targeting a small header button during troubleshooting.
+- Symptoms discovered:
+  - stats overlay could only be toggled via mouse click
+- Solution:
+  - added `Shift+S` key handling in `VideoPlayer` when diagnostics tools are enabled and playback is active
+  - updated the Stats button tooltip to document the shortcut
+- Validation:
+  - TypeScript/Problems check reports no errors in updated files
+
+### 2026-04-15 - Player diagnostics "Stats for Nerds" overlay
+
+- Request: add a YouTube-style in-player diagnostics view to inspect live playback performance and stream selection.
+- Rationale: playback quality and stutter reports are easier to debug when stream/video telemetry is visible during playback, not only in copied logs.
+- Symptoms discovered:
+  - current diagnostics exposed only a copy-to-clipboard report and no live metrics view
+  - users needed immediate visibility for bitrate estimate, selected level, buffering, and dropped-frame behavior
+- Solution:
+  - added a diagnostics-only `Stats` toggle in `VideoPlayer` header controls
+  - implemented a live overlay panel updating every second with state, resolution, selected level, bandwidth estimate, buffer ahead, dropped/decoded frames, dropped-frame percentage, playback rate, volume, and manifest URL
+  - extended copied playback report to include the same runtime metrics snapshot
+  - updated Settings diagnostics hint text to describe the new overlay tool
+- Validation:
+  - TypeScript/Problems check reports no errors in changed files
+
+### 2026-04-15 - Release workflow adds Windows ARM64 artifacts
+
+- Request: publish Windows ARM64 installers in addition to existing x64 artifacts so Snapdragon users can install native builds.
+- Rationale: release automation should ship both supported Windows architectures from tagged builds.
+- Symptoms discovered:
+  - local ARM64 build attempt failed on missing ARM64 MSVC cross tools (`cl.exe`/`clang` not found), indicating architecture-specific toolchain requirements
+  - existing release workflow built only one default Windows target and uploaded only x64 paths
+- Solution:
+  - changed `.github/workflows/release.yml` to a matrix build for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`
+  - configured Rust setup with per-matrix target installation
+  - uploaded per-target installer bundles as artifacts and added a single publish job that downloads and releases all installers together
+- Validation:
+  - workflow YAML updated with explicit per-target build commands and release file globs for both architectures
+
 ## Version 1.1.1 (2026-04-15)
 
 ### Fix duplicate channels in Favorites view

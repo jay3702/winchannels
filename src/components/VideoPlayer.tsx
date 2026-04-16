@@ -51,6 +51,23 @@ const SKIP_BACK = 10;
 const RE_ENABLE_BEFORE = 30; // seek this many seconds before block start to re-enable auto-skip
 type CaptionMode = 'off' | 'broadcast' | 'srt';
 
+interface NerdStats {
+  timestampIso: string;
+  manifestUrl: string;
+  playbackState: string;
+  playbackRate: number;
+  volumePct: number;
+  muted: boolean;
+  videoSize: string;
+  currentLevel: string;
+  bandwidthEstimate: string;
+  bufferAheadSec: number;
+  droppedFrames: number | null;
+  decodedFrames: number | null;
+  droppedPercent: number | null;
+  readyState: number;
+}
+
 function formatBitrate(bitsPerSec: number | undefined): string {
   if (!bitsPerSec || !Number.isFinite(bitsPerSec) || bitsPerSec <= 0) return 'n/a';
   const mbps = bitsPerSec / 1_000_000;
@@ -61,6 +78,85 @@ function formatBitrate(bitsPerSec: number | undefined): string {
 function withQuery(url: string, key: string, value: string): string {
   const sep = url.includes('?') ? '&' : '?';
   return `${url}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+}
+
+function getBufferAhead(video: HTMLVideoElement): number {
+  const t = video.currentTime;
+  const ranges = video.buffered;
+  for (let i = 0; i < ranges.length; i += 1) {
+    const start = ranges.start(i);
+    const end = ranges.end(i);
+    if (t >= start && t <= end) {
+      return Math.max(0, end - t);
+    }
+  }
+  return 0;
+}
+
+function collectNerdStats(video: HTMLVideoElement | null, hls: Hls | null, fallbackManifestUrl: string): NerdStats {
+  const nowIso = new Date().toISOString();
+  if (!video) {
+    return {
+      timestampIso: nowIso,
+      manifestUrl: fallbackManifestUrl,
+      playbackState: 'no-video-element',
+      playbackRate: 1,
+      volumePct: 0,
+      muted: false,
+      videoSize: 'n/a',
+      currentLevel: 'n/a',
+      bandwidthEstimate: 'n/a',
+      bufferAheadSec: 0,
+      droppedFrames: null,
+      decodedFrames: null,
+      droppedPercent: null,
+      readyState: 0,
+    };
+  }
+
+  const quality = typeof video.getVideoPlaybackQuality === 'function'
+    ? video.getVideoPlaybackQuality()
+    : null;
+  const legacyVideo = video as HTMLVideoElement & {
+    webkitDroppedFrameCount?: number;
+    webkitDecodedFrameCount?: number;
+  };
+  const droppedFrames = quality?.droppedVideoFrames ?? legacyVideo.webkitDroppedFrameCount ?? null;
+  const decodedFrames = quality?.totalVideoFrames ?? legacyVideo.webkitDecodedFrameCount ?? null;
+  const droppedPercent =
+    droppedFrames !== null && decodedFrames !== null && decodedFrames > 0
+      ? (droppedFrames / decodedFrames) * 100
+      : null;
+
+  let currentLevel = 'n/a';
+  let bandwidthEstimate = 'n/a';
+  if (hls) {
+    const selected = hls.currentLevel;
+    if (selected >= 0 && selected < hls.levels.length) {
+      const level = hls.levels[selected];
+      currentLevel = `${selected} (${level.width || '?'}x${level.height || '?'} @ ${formatBitrate(level.bitrate)})`;
+    } else {
+      currentLevel = 'auto';
+    }
+    bandwidthEstimate = formatBitrate(hls.bandwidthEstimate);
+  }
+
+  return {
+    timestampIso: nowIso,
+    manifestUrl: fallbackManifestUrl,
+    playbackState: video.paused ? 'paused' : (video.ended ? 'ended' : 'playing'),
+    playbackRate: video.playbackRate,
+    volumePct: Math.round(video.volume * 100),
+    muted: video.muted,
+    videoSize: `${video.videoWidth || '?'}x${video.videoHeight || '?'}`,
+    currentLevel,
+    bandwidthEstimate,
+    bufferAheadSec: getBufferAhead(video),
+    droppedFrames,
+    decodedFrames,
+    droppedPercent,
+    readyState: video.readyState,
+  };
 }
 
 export default function VideoPlayer() {
@@ -78,6 +174,7 @@ export default function VideoPlayer() {
     diagnosticsEnabled,
   } = useStore();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const subtitleBlobUrl = useRef<string | null>(null);
   const activeManifestUrlRef = useRef<string>('');
@@ -95,6 +192,9 @@ export default function VideoPlayer() {
   const [hasBroadcast, setHasBroadcast] = useState(false);
   const [captionMode, setCaptionMode] = useState<CaptionMode>('off');
   const [reportCopied, setReportCopied] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [nerdStats, setNerdStats] = useState<NerdStats | null>(null);
+  const [isOverlayFullscreen, setIsOverlayFullscreen] = useState(false);
   const captionModeRef = useRef<CaptionMode>('off');
   captionModeRef.current = captionMode;
 
@@ -157,7 +257,71 @@ export default function VideoPlayer() {
     setDuration(0);
     setDisabledBlocks(new Set());
     setSkipping(false);
+    setShowStats(false);
+    setNerdStats(null);
   }, [nowPlayingKey]);
+
+  useEffect(() => {
+    if (!diagnosticsEnabled || !nowPlayingId) {
+      setShowStats(false);
+      setNerdStats(null);
+      return;
+    }
+
+    const updateStats = () => {
+      const manifest = activeManifestUrlRef.current || nowPlayingManifestUrl || streamUrl(nowPlayingId);
+      setNerdStats(collectNerdStats(videoRef.current, hlsRef.current, manifest));
+    };
+
+    updateStats();
+    const id = window.setInterval(updateStats, 1000);
+    return () => window.clearInterval(id);
+  }, [diagnosticsEnabled, nowPlayingId, nowPlayingManifestUrl]);
+
+  useEffect(() => {
+    if (!diagnosticsEnabled || !nowPlayingId) return;
+
+    function isShiftS(e: KeyboardEvent): boolean {
+      if (!e.shiftKey) return false;
+      if (e.code === 'KeyS') return true;
+      return e.key.toLowerCase() === 's';
+    }
+
+    function onToggleStatsHotkey(e: KeyboardEvent) {
+      if (!isShiftS(e)) return;
+      if (e.repeat) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setShowStats((v) => !v);
+    }
+
+    const video = videoRef.current;
+    const overlay = overlayRef.current;
+    window.addEventListener('keydown', onToggleStatsHotkey, true);
+    document.addEventListener('keydown', onToggleStatsHotkey, true);
+    video?.addEventListener('keydown', onToggleStatsHotkey);
+    overlay?.addEventListener('keydown', onToggleStatsHotkey);
+    return () => {
+      window.removeEventListener('keydown', onToggleStatsHotkey, true);
+      document.removeEventListener('keydown', onToggleStatsHotkey, true);
+      video?.removeEventListener('keydown', onToggleStatsHotkey);
+      overlay?.removeEventListener('keydown', onToggleStatsHotkey);
+    };
+  }, [diagnosticsEnabled, nowPlayingId]);
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      const fullscreenEl = document.fullscreenElement;
+      setIsOverlayFullscreen(Boolean(fullscreenEl) && fullscreenEl === overlayRef.current);
+      if (fullscreenEl === overlayRef.current) {
+        overlayRef.current?.focus();
+      }
+    }
+
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    onFullscreenChange();
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
 
   // HLS setup
   useEffect(() => {
@@ -428,10 +592,25 @@ export default function VideoPlayer() {
     applyCaptionMode(video, mode);
   }
 
+  async function toggleOverlayFullscreen() {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+
+    if (document.fullscreenElement === overlay) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    await overlay.requestFullscreen();
+    overlay.focus();
+  }
+
   async function copyPlaybackReport() {
     if (!nowPlayingId) return;
     const hls = hlsRef.current;
     const video = videoRef.current;
+    const manifest = activeManifestUrlRef.current || nowPlayingManifestUrl || streamUrl(nowPlayingId);
+    const stats = collectNerdStats(video, hls, manifest);
     const levelLines: string[] = [];
     let selectedLine = 'Selected level: n/a';
     let bandwidthLine = 'Estimated bandwidth: n/a';
@@ -464,9 +643,17 @@ export default function VideoPlayer() {
       `Title: ${nowPlayingTitle}`,
       `File ID: ${nowPlayingId}`,
       `Prefer remux: ${preferRemux ? 'on' : 'off'}`,
-      `Manifest URL: ${activeManifestUrlRef.current || nowPlayingManifestUrl || streamUrl(nowPlayingId)}`,
-      `Video element: ${video?.videoWidth || '?'}x${video?.videoHeight || '?'}`,
+      `Manifest URL: ${manifest}`,
+      `Video element: ${stats.videoSize}`,
       `Current time: ${Math.floor(currentTime)}s / ${Math.floor(duration)}s`,
+      `Playback state: ${stats.playbackState}`,
+      `Playback rate: ${stats.playbackRate.toFixed(2)}x`,
+      `Volume: ${stats.muted ? 'muted' : `${stats.volumePct}%`}`,
+      `Buffer ahead: ${stats.bufferAheadSec.toFixed(2)}s`,
+      `Dropped frames: ${stats.droppedFrames ?? 'n/a'}`,
+      `Decoded frames: ${stats.decodedFrames ?? 'n/a'}`,
+      `Dropped frame %: ${stats.droppedPercent !== null ? `${stats.droppedPercent.toFixed(2)}%` : 'n/a'}`,
+      `Ready state: ${stats.readyState}`,
       selectedLine,
       bandwidthLine,
       'Levels:',
@@ -487,7 +674,7 @@ export default function VideoPlayer() {
   if (!nowPlayingId) return null;
 
   return (
-    <div className="video-overlay">
+    <div className="video-overlay" ref={overlayRef} tabIndex={0}>
       <div className="video-header">
         <span className="video-title">{nowPlayingTitle}</span>
         <div className="video-header__controls">
@@ -521,10 +708,26 @@ export default function VideoPlayer() {
             {SKIP_FWD}s ↻
           </button>
           {diagnosticsEnabled && (
+            <button
+              className={`video-report-btn ${showStats ? 'video-report-btn--active' : ''}`}
+              onClick={() => setShowStats((v) => !v)}
+              title="Toggle live playback stats overlay (Shift+S)"
+            >
+              {showStats ? 'Hide Stats' : 'Stats'}
+            </button>
+          )}
+          {diagnosticsEnabled && (
             <button className="video-report-btn" onClick={copyPlaybackReport} title="Copy playback diagnostics report">
               {reportCopied ? 'Copied' : 'Copy Report'}
             </button>
           )}
+          <button
+            className="video-jump-btn"
+            onClick={() => { void toggleOverlayFullscreen(); }}
+            title={isOverlayFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          >
+            {isOverlayFullscreen ? '⤢ Exit Fullscreen' : '⤢ Fullscreen'}
+          </button>
           <button className="video-close" onClick={stopPlayback} aria-label="Close player">
             ✕
           </button>
@@ -555,6 +758,24 @@ export default function VideoPlayer() {
       )}
 
       {skipping && <div className="video-skip-toast">Skipping commercial…</div>}
+
+      {diagnosticsEnabled && showStats && nerdStats && (
+        <div className="video-nerd-panel" aria-live="polite">
+          <div className="video-nerd-panel__title">Stats for Nerds</div>
+          <div className="video-nerd-panel__row"><span>State</span><strong>{nerdStats.playbackState}</strong></div>
+          <div className="video-nerd-panel__row"><span>Video</span><strong>{nerdStats.videoSize}</strong></div>
+          <div className="video-nerd-panel__row"><span>Level</span><strong>{nerdStats.currentLevel}</strong></div>
+          <div className="video-nerd-panel__row"><span>BW Estimate</span><strong>{nerdStats.bandwidthEstimate}</strong></div>
+          <div className="video-nerd-panel__row"><span>Buffer Ahead</span><strong>{nerdStats.bufferAheadSec.toFixed(2)}s</strong></div>
+          <div className="video-nerd-panel__row"><span>Dropped/Decoded</span><strong>{nerdStats.droppedFrames ?? 'n/a'} / {nerdStats.decodedFrames ?? 'n/a'}</strong></div>
+          <div className="video-nerd-panel__row"><span>Dropped %</span><strong>{nerdStats.droppedPercent !== null ? `${nerdStats.droppedPercent.toFixed(2)}%` : 'n/a'}</strong></div>
+          <div className="video-nerd-panel__row"><span>Ready State</span><strong>{nerdStats.readyState}</strong></div>
+          <div className="video-nerd-panel__row"><span>Rate</span><strong>{nerdStats.playbackRate.toFixed(2)}x</strong></div>
+          <div className="video-nerd-panel__row"><span>Volume</span><strong>{nerdStats.muted ? 'muted' : `${nerdStats.volumePct}%`}</strong></div>
+          <div className="video-nerd-panel__small" title={nerdStats.manifestUrl}>Manifest: {nerdStats.manifestUrl}</div>
+          <div className="video-nerd-panel__small">Updated: {nerdStats.timestampIso}</div>
+        </div>
+      )}
 
       {error ? (
         <div className="video-error">

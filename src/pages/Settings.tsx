@@ -269,7 +269,7 @@ export default function Settings() {
             <span>Enable diagnostics tools in player</span>
           </label>
           <p className="settings-hint">
-            Shows the in-player report button for capturing bitrate/manifest details when troubleshooting playback.
+            Shows in-player diagnostics tools, including a live stats overlay and report copy button for troubleshooting playback.
           </p>
         </section>
 

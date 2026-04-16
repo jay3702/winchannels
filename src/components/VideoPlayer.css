@@ -7,6 +7,10 @@
   flex-direction: column;
 }
 
+.video-overlay:focus {
+  outline: none;
+}
+
 .video-header {
   display: flex;
   align-items: center;
@@ -177,6 +181,12 @@
   color: #fff;
 }
 
+.video-report-btn--active {
+  background: rgba(96, 176, 240, 0.35);
+  border-color: #9fcfff;
+  color: #fff;
+}
+
 /* ── Commercial indicator bar ────────────────────────────────────────────── */
 
 .video-ad-bar {
@@ -223,4 +233,54 @@
   border-radius: 20px;
   pointer-events: none;
   z-index: 10;
+}
+
+.video-nerd-panel {
+  position: absolute;
+  top: 64px;
+  left: 16px;
+  width: min(460px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 188, 255, 0.4);
+  background: rgba(5, 14, 24, 0.84);
+  color: #d9ebff;
+  font-size: 12px;
+  line-height: 1.35;
+  z-index: 12;
+  backdrop-filter: blur(4px);
+}
+
+.video-nerd-panel__title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #9ecfff;
+  margin-bottom: 8px;
+}
+
+.video-nerd-panel__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.video-nerd-panel__row span {
+  color: #9fb2c7;
+}
+
+.video-nerd-panel__row strong {
+  color: #f3f8ff;
+  text-align: right;
+  font-weight: 600;
+}
+
+.video-nerd-panel__small {
+  margin-top: 6px;
+  color: #8ea4ba;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
