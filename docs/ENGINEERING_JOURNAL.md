@@ -4,6 +4,18 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-16 - Version metadata bump to 1.1.8 for hidden-channel release
+
+- Request: cut a new release version that includes the Live hidden-channel visibility option.
+- Rationale: `v1.1.7` did not include commit `64efa75`; release installers must include the new setting.
+- Symptoms discovered:
+  - hidden-channel setting was present on `main` but not in `v1.1.7` tagged artifacts
+- Solution:
+  - bumped version metadata to `1.1.8` in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`
+  - prepared fresh `v1.1.8` tag from current `main`
+- Validation:
+  - local Problems check passes on changed files; tag release workflow will enforce version/tag parity
+
 ### 2026-04-16 - Live TV hidden-channel visibility setting
 
 - Request: add a user option to hide/show channels that are marked hidden by source/DVR metadata in Live view.
