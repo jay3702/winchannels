@@ -4,6 +4,19 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-16 - Linux ARM64 AppImage bundling fix (`xdg-open`)
+
+- Request: determine why Linux ARM64 failed and produce a corrected release.
+- Rationale: ARM64 Linux artifact generation should fail only for real compile issues, not missing base tools in runner images.
+- Symptoms discovered:
+  - `Build (aarch64-unknown-linux-gnu)` failed in `Build Tauri app`
+  - job logs showed `failed to bundle project xdg-open binary not found /usr/bin/xdg-open`
+- Solution:
+  - added `xdg-utils` to Linux dependency install step in release workflow
+  - bumped release metadata to `1.1.7` across manifest files for a fresh, consistent tagged release
+- Validation:
+  - local Problems checks pass for updated workflow and version files; next tagged release run should include Linux ARM64 AppImage bundling prerequisites
+
 ### 2026-04-16 - v1.1.5 workflow failure recovery via version correction
 
 - Request: fix release workflow failures after the new gating step blocked compilation.
