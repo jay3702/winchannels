@@ -6,6 +6,7 @@ const SERVERS_KEY = 'dvr_servers';
 const ACTIVE_SERVER_KEY = 'dvr_active_server_id';
 const PLAYBACK_REMUX_KEY = 'playback_prefer_remux';
 const DIAGNOSTICS_ENABLED_KEY = 'diagnostics_enabled';
+const LIVE_SHOW_HIDDEN_KEY = 'live_show_hidden_channels';
 
 export interface ServerOption {
   id: string;
@@ -83,6 +84,9 @@ export interface AppState {
 
   diagnosticsEnabled: boolean;
   setDiagnosticsEnabled: (value: boolean) => void;
+
+  showHiddenLiveChannels: boolean;
+  setShowHiddenLiveChannels: (value: boolean) => void;
 
   // Currently playing item – fileId drives the VideoPlayer
   nowPlayingId: string | null;
@@ -188,6 +192,12 @@ export const useStore = create<AppState>((set) => ({
   setDiagnosticsEnabled: (value: boolean) => {
     localStorage.setItem(DIAGNOSTICS_ENABLED_KEY, String(value));
     set({ diagnosticsEnabled: value });
+  },
+
+  showHiddenLiveChannels: localStorage.getItem(LIVE_SHOW_HIDDEN_KEY) === 'true',
+  setShowHiddenLiveChannels: (value: boolean) => {
+    localStorage.setItem(LIVE_SHOW_HIDDEN_KEY, String(value));
+    set({ showHiddenLiveChannels: value });
   },
 
   nowPlayingId: null,

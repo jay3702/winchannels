@@ -30,6 +30,7 @@ type GuideChannel = {
   ChannelID?: string;
   Number?: string;
   Favorite?: boolean;
+  Hidden?: boolean;
 };
 const TEXT = new Intl.Collator(undefined, { sensitivity: 'base' });
 
@@ -86,6 +87,23 @@ function parseGuideFavorites(data: unknown): Set<string> {
   return out;
 }
 
+function parseGuideHidden(data: unknown): Set<string> {
+  const out = new Set<string>();
+  if (!data || typeof data !== 'object') return out;
+
+  for (const value of Object.values(data as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const channel = value as GuideChannel;
+    if (!channel.Hidden) continue;
+    const keys = [channel.ID, channel.ChannelID, channel.Number]
+      .filter((v): v is string => Boolean(v && String(v).trim()))
+      .map((v) => String(v).trim().toLowerCase());
+    for (const key of keys) out.add(key);
+  }
+
+  return out;
+}
+
 function isFavoriteChannel(
   channel: Channel,
   guideFavorites: Set<string>
@@ -94,6 +112,25 @@ function isFavoriteChannel(
   if (channel.favorited === false) return false;
   const keys = favoriteKeyForChannel(channel);
   return keys.some((k) => guideFavorites.has(k));
+}
+
+function isHiddenChannel(
+  channel: Channel,
+  guideHidden: Set<string>
+): boolean {
+  const maybe = channel as Channel & {
+    hidden?: boolean;
+    is_hidden?: boolean;
+    disabled?: boolean;
+    enabled?: boolean;
+    visible?: boolean;
+  };
+
+  if (maybe.hidden === true || maybe.is_hidden === true || maybe.disabled === true) return true;
+  if (maybe.enabled === false || maybe.visible === false) return true;
+
+  const keys = favoriteKeyForChannel(channel);
+  return keys.some((k) => guideHidden.has(k));
 }
 
 function normalizedChannelName(name: string | undefined): string {
@@ -229,6 +266,7 @@ async function resolveLiveManifestUrl(channel: Channel): Promise<string> {
 export default function Live() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [guideFavorites, setGuideFavorites] = useState<Set<string>>(new Set());
+  const [guideHidden, setGuideHidden] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<SortMode>('number');
   const [diagnosticsSortMode, setDiagnosticsSortMode] = useState<DiagnosticsSortMode>('number');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
@@ -240,6 +278,7 @@ export default function Live() {
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
   const diagnosticsEnabled = useStore((s) => s.diagnosticsEnabled);
+  const showHiddenLiveChannels = useStore((s) => s.showHiddenLiveChannels);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,6 +293,7 @@ export default function Live() {
         if (cancelled) return;
         setChannels(loadedChannels);
         setGuideFavorites(parseGuideFavorites(loadedGuide));
+        setGuideHidden(parseGuideHidden(loadedGuide));
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -265,7 +305,11 @@ export default function Live() {
 
   const rows = useMemo<ChannelRow[]>(() => {
     const seen = new Map<string, number>();
-    return channels.map((channel) => {
+    const filteredChannels = showHiddenLiveChannels
+      ? channels
+      : channels.filter((channel) => !isHiddenChannel(channel, guideHidden));
+
+    return filteredChannels.map((channel) => {
       const sourceName = channelCollectionName(channel);
       const sourceId = (channel.source_id || 'unknown-source-id').trim();
       const sourceFilterLabel = `${sourceName || 'Unknown Source'} (${sourceId})`;
@@ -287,7 +331,7 @@ export default function Live() {
         sourceFilterLabel,
       };
     });
-  }, [channels]);
+  }, [channels, guideHidden, showHiddenLiveChannels]);
 
   const sourceFilters = useMemo(() => {
     const labels = rows

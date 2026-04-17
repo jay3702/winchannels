@@ -4,6 +4,21 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-16 - Live TV hidden-channel visibility setting
+
+- Request: add a user option to hide/show channels that are marked hidden by source/DVR metadata in Live view.
+- Rationale: hidden channels should not appear in normal Live browsing unless explicitly requested for diagnostics or edge cases.
+- Symptoms discovered:
+  - some users saw hidden HDHR/Channels DVR channels (including duplicates/SD/alternate language feeds) in Live list
+- Solution:
+  - added persisted app setting `showHiddenLiveChannels` (Settings -> Live TV -> Show hidden channels)
+  - extended Live guide parsing to read hidden flags from guide channel metadata
+  - added hidden-channel predicate that honors multiple API flag variants (`hidden`, `is_hidden`, `disabled`, `enabled=false`, `visible=false`) plus guide-hidden keys
+  - applied hidden filter to the Live row set (affecting list, source counts, and diagnostics matrix) unless the new setting is enabled
+- Validation:
+  - local Problems check passes for touched files
+  - change kept local per request; not pushed
+
 ### 2026-04-16 - Linux ARM64 AppImage bundling fix (`xdg-open`)
 
 - Request: determine why Linux ARM64 failed and produce a corrected release.

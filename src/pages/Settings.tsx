@@ -25,6 +25,8 @@ export default function Settings() {
     setPreferRemux,
     diagnosticsEnabled,
     setDiagnosticsEnabled,
+    showHiddenLiveChannels,
+    setShowHiddenLiveChannels,
   } = useStore();
   const [draftServers, setDraftServers] = useState<ServerOption[]>(servers);
   const [shareDraft, setShareDraft] = useState(storageSharePath);
@@ -270,6 +272,21 @@ export default function Settings() {
           </label>
           <p className="settings-hint">
             Shows in-player diagnostics tools, including a live stats overlay and report copy button for troubleshooting playback.
+          </p>
+        </section>
+
+        <section className="settings-section">
+          <h2 className="settings-section__title">Live TV</h2>
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={showHiddenLiveChannels}
+              onChange={(e) => setShowHiddenLiveChannels(e.target.checked)}
+            />
+            <span>Show hidden channels</span>
+          </label>
+          <p className="settings-hint">
+            When off, Live TV filters out channels marked hidden by your channel source or Channels DVR metadata.
           </p>
         </section>
 

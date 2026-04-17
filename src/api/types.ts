@@ -125,6 +125,7 @@ export interface Channel {
   logo_url?: string;
   hd?: boolean;
   favorited?: boolean;
+  hidden?: boolean;
   source_name?: string;
   source_id?: string;
   station_id?: string;
