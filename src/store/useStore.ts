@@ -95,7 +95,17 @@ export interface AppState {
   nowPlayingFilePath: string;       // relative path from DVR API, e.g. TV/Show/Episode.mpg
   nowPlayingCommercials: number[];   // flat [start, end, start, end, …] in seconds
   nowPlayingManifestUrl: string;
-  playItem: (fileId: string, title: string, filePath?: string, commercials?: number[], manifestUrl?: string) => void;
+  nowPlayingResumeTime: number;
+  nowPlayingRecordingKind: 'episode' | 'movie' | null;
+  playItem: (
+    fileId: string,
+    title: string,
+    filePath?: string,
+    commercials?: number[],
+    manifestUrl?: string,
+    resumeTime?: number,
+    recordingKind?: 'episode' | 'movie' | null
+  ) => void;
   stopPlayback: () => void;
 }
 
@@ -119,6 +129,8 @@ export const useStore = create<AppState>((set) => ({
         nowPlayingFilePath: '',
         nowPlayingCommercials: [],
         nowPlayingManifestUrl: '',
+        nowPlayingResumeTime: 0,
+        nowPlayingRecordingKind: null,
       };
     });
   },
@@ -150,6 +162,8 @@ export const useStore = create<AppState>((set) => ({
         nowPlayingFilePath: '',
         nowPlayingCommercials: [],
         nowPlayingManifestUrl: '',
+        nowPlayingResumeTime: 0,
+        nowPlayingRecordingKind: null,
       };
     });
   },
@@ -171,6 +185,8 @@ export const useStore = create<AppState>((set) => ({
         nowPlayingFilePath: '',
         nowPlayingCommercials: [],
         nowPlayingManifestUrl: '',
+        nowPlayingResumeTime: 0,
+        nowPlayingRecordingKind: null,
       };
     });
   },
@@ -206,7 +222,9 @@ export const useStore = create<AppState>((set) => ({
   nowPlayingFilePath: '',
   nowPlayingCommercials: [],
   nowPlayingManifestUrl: '',
-  playItem: (fileId, title, filePath = '', commercials = [], manifestUrl = '') =>
+  nowPlayingResumeTime: 0,
+  nowPlayingRecordingKind: null,
+  playItem: (fileId, title, filePath = '', commercials = [], manifestUrl = '', resumeTime = 0, recordingKind = null) =>
     set(s => ({
       nowPlayingId: fileId,
       nowPlayingKey: s.nowPlayingKey + 1,
@@ -214,6 +232,16 @@ export const useStore = create<AppState>((set) => ({
       nowPlayingFilePath: filePath,
       nowPlayingCommercials: commercials,
       nowPlayingManifestUrl: manifestUrl,
+      nowPlayingResumeTime: Math.max(0, Math.floor(resumeTime)),
+      nowPlayingRecordingKind: recordingKind,
     })),
-  stopPlayback: () => set({ nowPlayingId: null, nowPlayingTitle: '', nowPlayingFilePath: '', nowPlayingCommercials: [], nowPlayingManifestUrl: '' }),
+  stopPlayback: () => set({
+    nowPlayingId: null,
+    nowPlayingTitle: '',
+    nowPlayingFilePath: '',
+    nowPlayingCommercials: [],
+    nowPlayingManifestUrl: '',
+    nowPlayingResumeTime: 0,
+    nowPlayingRecordingKind: null,
+  }),
 }));

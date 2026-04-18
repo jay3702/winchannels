@@ -1,4 +1,4 @@
-import request from './client';
+import request, { requestWithMethod } from './client';
 import type { Episode, Movie, Recording, Show, ListParams, Channel } from './types';
 
 // ── Shows ──────────────────────────────────────────────────────────────────
@@ -57,4 +57,74 @@ export function fetchRecordings(): Promise<Recording[]> {
     order: 'desc',
     source: 'recordings',
   });
+}
+
+interface MutationCandidate {
+  path: string;
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  body?: Record<string, unknown>;
+  params?: Record<string, string>;
+  bodyEncoding?: 'json' | 'form';
+}
+
+let lastRecordingMutationDebug: string | null = null;
+let lastRecordingMutationFailure: string | null = null;
+
+export function getLastRecordingMutationDebug(): string | null {
+  return lastRecordingMutationDebug;
+}
+
+export function getLastRecordingMutationFailure(): string | null {
+  return lastRecordingMutationFailure;
+}
+
+async function runMutationCandidates(candidates: MutationCandidate[]): Promise<void> {
+  const errors: string[] = [];
+
+  for (const candidate of candidates) {
+    const mode = candidate.body
+      ? `${candidate.bodyEncoding === 'form' ? 'form-body' : 'json-body'}`
+      : (candidate.params ? 'query-params' : 'no-body');
+    const label = `${candidate.method} ${candidate.path} (${mode})`;
+    try {
+      await requestWithMethod(candidate.path, candidate.method, candidate.body, candidate.params, candidate.bodyEncoding ?? 'json');
+      lastRecordingMutationDebug = label;
+      lastRecordingMutationFailure = null;
+      return;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`${label}: ${msg}`);
+    }
+  }
+
+  lastRecordingMutationFailure = errors[0] ?? 'No compatible mutation endpoint found.';
+  throw new Error(`No compatible mutation endpoint found. Tried:\n${errors.join('\n')}`);
+}
+
+function buildWatchedCandidates(id: string, watched: boolean): MutationCandidate[] {
+  const dvrFilePath = `/dvr/files/${id}`;
+  // HAR-confirmed in Channels web client for both watched and unwatched actions.
+  return [{ path: `${dvrFilePath}/${watched ? 'watch' : 'unwatch'}`, method: 'PUT' }];
+}
+
+function buildPlaybackCandidates(id: string, playbackTime: number): MutationCandidate[] {
+  const seconds = Math.max(0, Math.floor(playbackTime));
+  // HAR-confirmed in Channels web client.
+  return [{ path: `/dvr/files/${id}/playback_time/${seconds}`, method: 'PUT' }];
+}
+
+export function setEpisodeWatched(id: string, watched: boolean): Promise<void> {
+  return runMutationCandidates(buildWatchedCandidates(id, watched));
+}
+
+export function setMovieWatched(id: string, watched: boolean): Promise<void> {
+  return runMutationCandidates(buildWatchedCandidates(id, watched));
+}
+
+export function setEpisodePlaybackTime(id: string, playbackTime: number): Promise<void> {
+  return runMutationCandidates(buildPlaybackCandidates(id, playbackTime));
+}
+
+export function setMoviePlaybackTime(id: string, playbackTime: number): Promise<void> {
+  return runMutationCandidates(buildPlaybackCandidates(id, playbackTime));
 }

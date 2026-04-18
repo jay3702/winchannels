@@ -21,6 +21,10 @@ interface MediaCardProps {
   ariaLabel?: string;
   onPlayAction?: () => void;
   playActionLabel?: string;
+  onToggleWatched?: () => void;
+  watchedActionLabel?: string;
+  watchedActionBusy?: boolean;
+  recordingKind?: 'episode' | 'movie' | null;
 }
 
 function formatDuration(seconds: number): string {
@@ -62,6 +66,10 @@ export default function MediaCard({
   ariaLabel,
   onPlayAction,
   playActionLabel = 'Play',
+  onToggleWatched,
+  watchedActionLabel,
+  watchedActionBusy = false,
+  recordingKind = null,
 }: MediaCardProps) {
   const { playItem } = useStore();
   const serverUrl = getServerUrl();
@@ -74,8 +82,9 @@ export default function MediaCard({
 
   const progress = duration > 0 ? Math.min((playbackTime / duration) * 100, 100) : 0;
   const label = subtitle ? `${title} – ${subtitle}` : title;
-  const handleClick = onClick ?? (() => playItem(id, label, filePath, commercials));
+  const handleClick = onClick ?? (() => playItem(id, label, filePath, commercials, '', playbackTime, recordingKind));
   const resolvedAriaLabel = ariaLabel ?? (onClick ? `Select ${label}` : `Play ${label}`);
+  const toggleLabel = watchedActionLabel ?? (watched ? 'Mark unwatched' : 'Mark watched');
 
   return (
     <button
@@ -102,8 +111,22 @@ export default function MediaCard({
             ▶
           </button>
         )}
+        {onToggleWatched && (
+          <button
+            className="media-card__watch-action"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!watchedActionBusy) onToggleWatched();
+            }}
+            aria-label={`${toggleLabel} ${label}`}
+            title={toggleLabel}
+            disabled={watchedActionBusy}
+          >
+            {watchedActionBusy ? '…' : (watched ? '↺' : '✓')}
+          </button>
+        )}
         {badge && <span className="media-card__badge">{badge}</span>}
-        {watched && <span className="media-card__watched-dot" aria-label="Watched" />}
+        {watched && !onToggleWatched && <span className="media-card__watched-dot" aria-label="Watched" />}
       </div>
 
       <div className="media-card__info">

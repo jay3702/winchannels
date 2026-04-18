@@ -147,6 +147,9 @@ export default function RecentRecordings() {
                   <div className="rec-time-group-header">{timeGroup.timeLabel}</div>
                   {timeGroup.items.map((rec) => {
                     const logoUrl = logoForRecording(rec, channelLogos);
+                    const progress = rec.duration > 0
+                      ? Math.min(((rec.playback_time ?? 0) / rec.duration) * 100, 100)
+                      : 0;
                     return (
                       <button
                         key={rec.id}
@@ -161,7 +164,14 @@ export default function RecentRecordings() {
                             onError={(e) => applyLogoFallback(e.currentTarget)}
                           />
                         )}
-                        <span className="rec-item__title">{recLabel(rec)}</span>
+                        <span className="rec-item__main">
+                          <span className="rec-item__title">{recLabel(rec)}</span>
+                          {progress > 0 && !rec.watched && (
+                            <span className="rec-item__progress" aria-hidden="true">
+                              <span className="rec-item__progress-fill" style={{ width: `${progress}%` }} />
+                            </span>
+                          )}
+                        </span>
                       </button>
                     );
                   })}
@@ -184,7 +194,15 @@ export default function RecentRecordings() {
           <div className="rec-detail">
             <button
               className="rec-detail__thumb"
-              onClick={() => playItem(selected.id, recLabel(selected), selected.path, selected.commercials)}
+              onClick={() => playItem(
+                selected.id,
+                recLabel(selected),
+                selected.path,
+                selected.commercials,
+                '',
+                selected.playback_time,
+                selected.show_id ? 'episode' : 'movie'
+              )}
               title="Play recording"
             >
               <img src={selected.thumbnail_url} alt={recLabel(selected)} />
@@ -192,7 +210,18 @@ export default function RecentRecordings() {
             </button>
 
             <div className="rec-detail__body">
+
               <h2 className="rec-detail__title">{selected.title}</h2>
+
+              {/* Progress bar for in-progress, unwatched recordings */}
+              {selected.duration > 0 && !selected.watched && (selected.playback_time ?? 0) > 0 && (
+                <span className="rec-detail__progress" aria-hidden="true">
+                  <span
+                    className="rec-detail__progress-fill"
+                    style={{ width: `${Math.min(((selected.playback_time ?? 0) / selected.duration) * 100, 100)}%` }}
+                  />
+                </span>
+              )}
 
               {selected.episode_title && (
                 <p className="rec-detail__episode">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { fetchShows, fetchEpisodesForShow } from '../api/recordings';
+import { fetchShows, fetchEpisodesForShow, setEpisodeWatched } from '../api/recordings';
 import type { Show, Episode } from '../api/types';
 import MediaCard from '../components/MediaCard';
 import { useStore } from '../store/useStore';
@@ -88,15 +88,34 @@ export default function TVShows() {
   const [selectedEpisode, setSelectedEpisode] = useState<Episode | null>(null);
   const [showSort, setShowSort] = useState<SortMode>('alpha');
   const [episodeSort, setEpisodeSort] = useState<SortMode>('date');
+  const [filter, setFilter] = useState<'all' | 'unwatched'>('all');
   const [loadingShows, setLoadingShows] = useState(true);
   const [loadingEps, setLoadingEps] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [epError, setEpError] = useState<string | null>(null);
+  const [watchBusyId, setWatchBusyId] = useState<string | null>(null);
   const [showMetaOpen, setShowMetaOpen] = useState(false);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
   const requestedShowId = searchParams.get('showId');
+
+  useEffect(() => {
+    const rawFilter = searchParams.get('filter');
+    const nextFilter: 'all' | 'unwatched' = rawFilter === 'unwatched' ? 'unwatched' : 'all';
+    setFilter((prev) => (prev === nextFilter ? prev : nextFilter));
+  }, [searchParams]);
+
+  function updateFilter(next: 'all' | 'unwatched') {
+    setFilter(next);
+    const params = new URLSearchParams(searchParams);
+    if (next === 'all') {
+      params.delete('filter');
+    } else {
+      params.set('filter', next);
+    }
+    setSearchParams(params, { replace: true });
+  }
 
   const sortedShows = useMemo(() => {
     const list = [...shows];
@@ -109,7 +128,7 @@ export default function TVShows() {
   }, [shows, showSort]);
 
   const sortedEpisodes = useMemo(() => {
-    const list = [...episodes];
+    const list = filter === 'unwatched' ? episodes.filter((ep) => !ep.watched) : [...episodes];
     if (episodeSort === 'alpha') {
       list.sort((a, b) => {
         const ak = (a.episode_title || a.title || '').trim();
@@ -120,7 +139,7 @@ export default function TVShows() {
       list.sort((a, b) => b.created_at - a.created_at);
     }
     return list;
-  }, [episodes, episodeSort]);
+  }, [episodes, filter, episodeSort]);
 
   useEffect(() => {
     setLoadingShows(true);
@@ -159,6 +178,31 @@ export default function TVShows() {
         setEpError(msg);
       })
       .finally(() => setLoadingEps(false));
+  }
+
+  async function toggleWatched(episode: Episode) {
+    const nextWatched = !episode.watched;
+    const previous = episodes;
+
+    setEpError(null);
+    setWatchBusyId(episode.id);
+    setEpisodes((list) => list.map((ep) => (ep.id === episode.id ? { ...ep, watched: nextWatched } : ep)));
+    setSelectedEpisode((prev) => (prev?.id === episode.id ? { ...prev, watched: nextWatched } : prev));
+
+    try {
+      await setEpisodeWatched(episode.id, nextWatched);
+    } catch (e) {
+      setEpisodes(previous);
+      setSelectedEpisode((prev) => {
+        if (!prev || prev.id !== episode.id) return prev;
+        const restored = previous.find((ep) => ep.id === prev.id);
+        return restored ?? prev;
+      });
+      const msg = e instanceof Error ? e.message : String(e);
+      setEpError(`Failed to update watched state: ${msg}`);
+    } finally {
+      setWatchBusyId(null);
+    }
   }
 
   return (
@@ -205,6 +249,18 @@ export default function TVShows() {
             <header className="page__header">
               <h1 className="page__title">{selectedShow.name}</h1>
               <div className="page__filters">
+                <button
+                  className={`filter-btn ${filter === 'all' ? 'filter-btn--active' : ''}`}
+                  onClick={() => updateFilter('all')}
+                >
+                  All
+                </button>
+                <button
+                  className={`filter-btn ${filter === 'unwatched' ? 'filter-btn--active' : ''}`}
+                  onClick={() => updateFilter('unwatched')}
+                >
+                  Unwatched
+                </button>
                 <select
                   className="page-sort-select"
                   value={episodeSort}
@@ -279,14 +335,20 @@ export default function TVShows() {
                     onPlayAction={() => {
                       const { title, subtitle } = epLabel(ep);
                       const label = subtitle ? `${title} – ${subtitle}` : title;
-                      playItem(ep.id, label, ep.path, ep.commercials);
+                      playItem(ep.id, label, ep.path, ep.commercials, '', ep.playback_time, 'episode');
                     }}
                     playActionLabel="Play episode"
+                    onToggleWatched={() => {
+                      void toggleWatched(ep);
+                    }}
+                    watchedActionBusy={watchBusyId === ep.id}
+                    recordingKind="episode"
                     selected={selectedEpisode?.id === ep.id}
                     ariaLabel={`Select ${subtitle ? `${title} – ${subtitle}` : title}`}
                   />
                 );
               })}
+              {sortedEpisodes.length === 0 && <p className="page__status">No episodes found.</p>}
             </div>
           </>
         ) : (

@@ -1,3 +1,21 @@
+.rec-detail__progress {
+  display: block;
+  height: 14px;
+  border-radius: 7px;
+  background: #23233a;
+  overflow: hidden;
+  margin-bottom: 18px;
+  box-shadow: 0 1px 4px #0005;
+  border: 1px solid #222;
+}
+
+.rec-detail__progress-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #2f8ed8 60%, #60b0f0 100%);
+  border-radius: 7px;
+  transition: width 0.3s;
+}
 /* ── Shared page layout ─────────────────────────────────────────────────── */
 
 .page {
@@ -645,6 +663,7 @@
   padding: 6px 10px;
   cursor: pointer;
   transition: background 0.1s;
+  min-width: 0;
 }
 
 .rec-item:hover {
@@ -661,6 +680,40 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.rec-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 0%;
+  min-height: 36px;
+  width: 100%;
+}
+
+.rec-item__progress {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #23233a;
+  overflow: hidden;
+  margin: 4px 0 0 0;
+  box-shadow: 0 1px 3px #0004;
+  border: 1px solid #222;
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+}
+
+.rec-item__progress-fill {
+  display: block;
+  float: left;
+  height: 100%;
+  background: linear-gradient(90deg, #2f8ed8 60%, #60b0f0 100%);
+  border-radius: 3px;
+  transition: width 0.3s;
+  width: inherit;
 }
 
 .rec-item--active .rec-item__title {

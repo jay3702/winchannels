@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchMovies } from '../api/recordings';
+import { fetchMovies, setMovieWatched } from '../api/recordings';
 import type { Movie } from '../api/types';
 import MediaCard from '../components/MediaCard';
 import { useStore } from '../store/useStore';
@@ -37,6 +37,8 @@ export default function Movies() {
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [watchBusyId, setWatchBusyId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unwatched'>('all');
   const [sort, setSort] = useState<SortMode>('date');
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
@@ -45,6 +47,7 @@ export default function Movies() {
   useEffect(() => {
     setLoading(true);
     setError(null);
+    setActionError(null);
     fetchMovies({ sort: 'date_added', order: 'desc' })
       .then((loaded) => {
         setMovies(loaded);
@@ -64,6 +67,31 @@ export default function Movies() {
     }
     return list;
   }, [displayed, sort]);
+
+  async function toggleWatched(movie: Movie) {
+    const nextWatched = !movie.watched;
+    const previous = movies;
+
+    setActionError(null);
+    setWatchBusyId(movie.id);
+    setMovies((list) => list.map((m) => (m.id === movie.id ? { ...m, watched: nextWatched } : m)));
+    setSelectedMovie((prev) => (prev?.id === movie.id ? { ...prev, watched: nextWatched } : prev));
+
+    try {
+      await setMovieWatched(movie.id, nextWatched);
+    } catch (e) {
+      setMovies(previous);
+      setSelectedMovie((prev) => {
+        if (!prev || prev.id !== movie.id) return prev;
+        const restored = previous.find((m) => m.id === prev.id);
+        return restored ?? prev;
+      });
+      const msg = e instanceof Error ? e.message : String(e);
+      setActionError(`Failed to update watched state: ${msg}`);
+    } finally {
+      setWatchBusyId(null);
+    }
+  }
 
   return (
     <div className="page">
@@ -96,6 +124,7 @@ export default function Movies() {
 
       {loading && <p className="page__status">Loading…</p>}
       {error && <p className="page__error">⚠ {error}</p>}
+      {actionError && <p className="page__error">⚠ {actionError}</p>}
 
       {!loading && !error && (
         <>
@@ -106,7 +135,15 @@ export default function Movies() {
               </button>
               <button
                 className="media-detail__thumb"
-                onClick={() => playItem(selectedMovie.id, selectedMovie.title, selectedMovie.path, selectedMovie.commercials)}
+                onClick={() => playItem(
+                  selectedMovie.id,
+                  selectedMovie.title,
+                  selectedMovie.path,
+                  selectedMovie.commercials,
+                  '',
+                  selectedMovie.playback_time,
+                  'movie'
+                )}
                 title="Play movie"
               >
                 <img src={selectedMovie.thumbnail_url || selectedMovie.image_url || ''} alt={selectedMovie.title} />
@@ -156,6 +193,11 @@ export default function Movies() {
                   recordedAt={movie.created_at}
                   recordedAtFormat="datetime"
                   onClick={() => setSelectedMovie(movie)}
+                  onToggleWatched={() => {
+                    void toggleWatched(movie);
+                  }}
+                  watchedActionBusy={watchBusyId === movie.id}
+                  recordingKind="movie"
                   selected={false}
                   ariaLabel={`Select ${movie.title}`}
                 />

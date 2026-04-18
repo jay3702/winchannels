@@ -2,6 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { invoke } from '@tauri-apps/api/core';
 import request, { streamUrl } from '../api/client';
+import {
+  getLastRecordingMutationDebug,
+  getLastRecordingMutationFailure,
+  setEpisodePlaybackTime,
+  setEpisodeWatched,
+  setMoviePlaybackTime,
+  setMovieWatched,
+} from '../api/recordings';
 import { useStore } from '../store/useStore';
 import { buildTauriHlsLoader } from '../lib/hlsTauriLoader';
 import './VideoPlayer.css';
@@ -167,6 +175,8 @@ export default function VideoPlayer() {
     nowPlayingCommercials,
     nowPlayingFilePath,
     nowPlayingManifestUrl,
+    nowPlayingResumeTime,
+    nowPlayingRecordingKind,
     storageSharePath,
     stopPlayback,
     serverChangeVersion,
@@ -194,13 +204,88 @@ export default function VideoPlayer() {
   const [reportCopied, setReportCopied] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [nerdStats, setNerdStats] = useState<NerdStats | null>(null);
+  const [lastMutationDebug, setLastMutationDebug] = useState<string>('n/a');
+  const [lastMutationFailure, setLastMutationFailure] = useState<string>('n/a');
   const [isOverlayFullscreen, setIsOverlayFullscreen] = useState(false);
   const captionModeRef = useRef<CaptionMode>('off');
+  const hasAppliedResumeRef = useRef(false);
+  const hasMarkedWatchedRef = useRef(false);
+  const saveInFlightRef = useRef(false);
+  const pendingSaveRef = useRef<number | null>(null);
+  const pendingMarkWatchedRef = useRef(false);
+  const lastSavedPlaybackRef = useRef(0);
   captionModeRef.current = captionMode;
 
   useEffect(() => {
     dvrStorageRootCache = null;
   }, [serverChangeVersion]);
+
+  useEffect(() => {
+    hasAppliedResumeRef.current = false;
+    hasMarkedWatchedRef.current = false;
+    saveInFlightRef.current = false;
+    pendingSaveRef.current = null;
+    pendingMarkWatchedRef.current = false;
+    lastSavedPlaybackRef.current = Math.max(0, Math.floor(nowPlayingResumeTime));
+  }, [nowPlayingKey, nowPlayingResumeTime]);
+
+  function canSyncPlayback(): boolean {
+    return Boolean(nowPlayingId && nowPlayingRecordingKind);
+  }
+
+  async function persistPlaybackUpdate(playbackTime: number, markWatched: boolean): Promise<void> {
+    if (!nowPlayingId || !nowPlayingRecordingKind) return;
+
+    const clamped = Math.max(0, Math.floor(playbackTime));
+    if (nowPlayingRecordingKind === 'episode') {
+      await setEpisodePlaybackTime(nowPlayingId, clamped);
+      if (markWatched) await setEpisodeWatched(nowPlayingId, true);
+      return;
+    }
+
+    await setMoviePlaybackTime(nowPlayingId, clamped);
+    if (markWatched) await setMovieWatched(nowPlayingId, true);
+  }
+
+  function flushPendingPlaybackUpdate() {
+    if (saveInFlightRef.current) return;
+    if (!canSyncPlayback()) return;
+
+    const pendingPlayback = pendingSaveRef.current;
+    const pendingWatched = pendingMarkWatchedRef.current;
+    if (pendingPlayback == null && !pendingWatched) return;
+
+    const playbackToWrite = pendingPlayback ?? lastSavedPlaybackRef.current;
+    pendingSaveRef.current = null;
+    pendingMarkWatchedRef.current = false;
+
+    saveInFlightRef.current = true;
+    void persistPlaybackUpdate(playbackToWrite, pendingWatched)
+      .then(() => {
+        lastSavedPlaybackRef.current = Math.max(0, Math.floor(playbackToWrite));
+      })
+      .catch((e) => {
+        // Mutation endpoints are best-effort; continue playback if unsupported.
+        console.warn('[PlaybackSync] Could not persist playback update', e);
+      })
+      .finally(() => {
+        saveInFlightRef.current = false;
+        if (pendingSaveRef.current != null || pendingMarkWatchedRef.current) {
+          flushPendingPlaybackUpdate();
+        }
+      });
+  }
+
+  function queuePlaybackUpdate(playbackTime: number, force = false, markWatched = false) {
+    if (!canSyncPlayback()) return;
+    const clamped = Math.max(0, Math.floor(playbackTime));
+    const delta = Math.abs(clamped - lastSavedPlaybackRef.current);
+    if (!force && delta < 20) return;
+
+    pendingSaveRef.current = clamped;
+    if (markWatched) pendingMarkWatchedRef.current = true;
+    flushPendingPlaybackUpdate();
+  }
 
   function getCaptionTracks(video: HTMLVideoElement) {
     const tracks = Array.from(video.textTracks);
@@ -271,6 +356,8 @@ export default function VideoPlayer() {
     const updateStats = () => {
       const manifest = activeManifestUrlRef.current || nowPlayingManifestUrl || streamUrl(nowPlayingId);
       setNerdStats(collectNerdStats(videoRef.current, hlsRef.current, manifest));
+      setLastMutationDebug(getLastRecordingMutationDebug() ?? 'n/a');
+      setLastMutationFailure(getLastRecordingMutationFailure() ?? 'n/a');
     };
 
     updateStats();
@@ -423,6 +510,16 @@ export default function VideoPlayer() {
             video.play().catch((e: Error) => { if (!cancelled) setError(e.message); });
             syncCaptionState(video);
 
+            if (
+              !hasAppliedResumeRef.current &&
+              nowPlayingResumeTime > 5 &&
+              Number.isFinite(video.duration) &&
+              nowPlayingResumeTime < Math.max(video.duration - 10, 10)
+            ) {
+              hasAppliedResumeRef.current = true;
+              video.currentTime = nowPlayingResumeTime;
+            }
+
             // Try to load a sidecar .srt subtitle file if a share path is configured.
             if (storageSharePath && nowPlayingFilePath) {
               // Strip the DVR server's absolute storage root prefix so we get
@@ -525,6 +622,17 @@ export default function VideoPlayer() {
       if (!video) return;
       const t = video.currentTime;
       setCurrentTime(t);
+      queuePlaybackUpdate(t);
+
+      if (
+        !hasMarkedWatchedRef.current &&
+        Number.isFinite(video.duration) &&
+        video.duration > 0 &&
+        t / video.duration >= 0.9
+      ) {
+        hasMarkedWatchedRef.current = true;
+        queuePlaybackUpdate(t, true, true);
+      }
 
       if (!skipAdsRef.current) return;
       const blocks = adBlocksRef.current;
@@ -542,8 +650,29 @@ export default function VideoPlayer() {
       }
     }
 
+    function onPause() {
+      if (!video) return;
+      queuePlaybackUpdate(video.currentTime, true);
+    }
+
+    function onEnded() {
+      if (!video) return;
+      hasMarkedWatchedRef.current = true;
+      queuePlaybackUpdate(video.currentTime, true, true);
+    }
+
     function onLoadedMetadata() {
-      if (video) setDuration(video.duration);
+      if (!video) return;
+      setDuration(video.duration);
+      if (
+        !hasAppliedResumeRef.current &&
+        nowPlayingResumeTime > 5 &&
+        Number.isFinite(video.duration) &&
+        nowPlayingResumeTime < Math.max(video.duration - 10, 10)
+      ) {
+        hasAppliedResumeRef.current = true;
+        video.currentTime = nowPlayingResumeTime;
+      }
     }
 
     function onSeeked() {
@@ -572,12 +701,17 @@ export default function VideoPlayer() {
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('loadedmetadata', onLoadedMetadata);
     video.addEventListener('seeked', onSeeked);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('ended', onEnded);
     return () => {
+      queuePlaybackUpdate(video.currentTime, true);
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('loadedmetadata', onLoadedMetadata);
       video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('ended', onEnded);
     };
-  }, [nowPlayingId]);
+  }, [nowPlayingKey, nowPlayingRecordingKind, nowPlayingResumeTime]);
 
   function skipBy(delta: number) {
     const video = videoRef.current;
@@ -644,6 +778,8 @@ export default function VideoPlayer() {
       `File ID: ${nowPlayingId}`,
       `Prefer remux: ${preferRemux ? 'on' : 'off'}`,
       `Manifest URL: ${manifest}`,
+      `Last mutation endpoint: ${getLastRecordingMutationDebug() ?? 'n/a'}`,
+      `Last mutation failure: ${getLastRecordingMutationFailure() ?? 'n/a'}`,
       `Video element: ${stats.videoSize}`,
       `Current time: ${Math.floor(currentTime)}s / ${Math.floor(duration)}s`,
       `Playback state: ${stats.playbackState}`,
@@ -772,6 +908,8 @@ export default function VideoPlayer() {
           <div className="video-nerd-panel__row"><span>Ready State</span><strong>{nerdStats.readyState}</strong></div>
           <div className="video-nerd-panel__row"><span>Rate</span><strong>{nerdStats.playbackRate.toFixed(2)}x</strong></div>
           <div className="video-nerd-panel__row"><span>Volume</span><strong>{nerdStats.muted ? 'muted' : `${nerdStats.volumePct}%`}</strong></div>
+          <div className="video-nerd-panel__row"><span>Last Mutation</span><strong>{lastMutationDebug}</strong></div>
+          <div className="video-nerd-panel__row"><span>Last Failure</span><strong>{lastMutationFailure}</strong></div>
           <div className="video-nerd-panel__small" title={nerdStats.manifestUrl}>Manifest: {nerdStats.manifestUrl}</div>
           <div className="video-nerd-panel__small">Updated: {nerdStats.timestampIso}</div>
         </div>

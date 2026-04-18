@@ -1,8 +1,125 @@
+### 2026-04-17 - Progress bar on Recent Recordings detail pane
+
+- Request: show playback progress bar on the detail pane after selecting a recording from the Recent Recordings list, matching the list row behavior.
+- Rationale: users expect to see resume progress consistently, not just in the list view.
+- Symptoms discovered:
+  - progress bar was visible in the Recent Recordings list but missing from the detail pane
+- Solution:
+  - added the same progress bar logic to the detail pane for in-progress, unwatched items
+- Validation:
+  - TypeScript diagnostics clean; production build run after update
 # Engineering Journal
 
 This file adds the decision context that is usually missing from commit messages and GitHub activity history. Entries should stay concise and focus on why a change was made, what symptoms were observed, and how the solution was validated.
 
 ## Unreleased
+
+### 2026-04-17 - TV shows filter URL persistence
+
+- Request: persist TV Shows `All`/`Unwatched` filter across refresh and navigation.
+- Rationale: users should not lose filter context when reloading or navigating back to the TV Shows page.
+- Symptoms discovered:
+  - filter state was local-only and reset to `All` on page reload
+- Solution:
+  - wired TV Shows filter to `filter` query param using `useSearchParams`
+  - hydrating component state from URL and updating the URL when filter changes
+- Validation:
+  - TypeScript diagnostics clean for updated page; production build run after update
+
+### 2026-04-17 - TV episode unwatched filter and recent-list progress indicators
+
+- Request: add All/Unwatched filtering on TV Shows page; keep Recent Recordings unfiltered but show playback progress bars.
+- Rationale: watched-state workflows should match Movies for episodic browsing, while recent recordings should surface resume progress without additional filter complexity.
+- Symptoms discovered:
+  - TV Shows page only exposed sorting and lacked watched-state filtering controls
+  - Recent Recordings list did not visualize partial playback despite available `playback_time`
+- Solution:
+  - added `All` and `Unwatched` filter controls to the TV Shows episode grid, integrated with existing sort behavior
+  - added slim per-item progress bars to Recent Recordings list rows when `playback_time > 0` and item is not watched
+- Validation:
+  - production build succeeds after updates
+
+### 2026-04-17 - HAR-confirmed unwatch mutation contract
+
+- Request: confirm and wire the inverse watched mutation using a dedicated unwatch HAR capture.
+- Rationale: previous implementation used a fallback set for unwatch pending evidence of the exact server route.
+- Symptoms discovered:
+  - broad fallback variants for unwatch were no longer necessary after capture-driven endpoint discovery
+- Solution:
+  - switched unwatched action to exact `PUT /dvr/files/:id/unwatch` route with empty body
+  - retained watched action as `PUT /dvr/files/:id/watch`
+- Validation:
+  - HAR parse confirms `PUT /dvr/files/65740/unwatch` returned `200`; production build run after code update
+
+### 2026-04-17 - HAR-confirmed watched and playback-time mutations
+
+- Request: replace endpoint guessing with exact mutation contracts captured from Channels web client HAR traces.
+- Rationale: runtime probing was noisy and unreliable; captured traffic now provides definitive request paths.
+- Symptoms discovered:
+  - watched writes only succeeded in web client via a specific DVR route shape
+  - playback resume writes used a path-parameter endpoint rather than JSON/form payload mutation
+- Solution:
+  - switched watched-on mutation to `PUT /dvr/files/:id/watch` (empty body)
+  - switched playback position writeback to `PUT /dvr/files/:id/playback_time/:seconds` (empty body)
+  - kept a small unwatch fallback set pending a dedicated HAR capture for the inverse action
+- Validation:
+  - TypeScript diagnostics clean for updated API module; production build validation run after change
+
+### 2026-04-17 - Watched toggle and resume-progress writeback prototype
+
+- Request: evaluate feasibility of watched/unwatched and resume playback state updates for recordings.
+- Rationale: current app consumed read-only DVR API fields (`watched`, `playback_time`) but offered no UI write path.
+- Symptoms discovered:
+  - API client only supported `GET` calls
+  - playback start did not seek to saved `playback_time`
+  - no mutation controls existed in movie/episode card UI
+- Solution:
+  - added mutation-capable API helper (`requestWithMethod`) and recording update wrappers with fallback endpoint/payload shapes
+  - added watched/unwatched action button on `MediaCard` and wired it into Movies and TV Shows pages with optimistic UI + rollback on failure
+  - extended playback store state to carry recording kind and resume time
+  - updated player to seek to saved resume point and periodically attempt playback-time + watched writeback for episode/movie playback
+- Validation:
+  - TypeScript/Problems check run after edits; remaining verification requires live DVR endpoint confirmation for undocumented mutation routes
+
+### 2026-04-17 - Playback diagnostics exposes winning mutation endpoint
+
+- Request: show which write endpoint shape succeeds so undocumented API discovery is visible in-app.
+- Rationale: endpoint guessing should be auditable during real playback/testing runs.
+- Symptoms discovered:
+  - write helpers attempted multiple candidate routes but success path was only visible in logs
+- Solution:
+  - tracked last successful mutation candidate in recording API helper
+  - added `Last Mutation` row to player diagnostics panel and playback report output
+- Validation:
+  - local build passes; runtime confirmation requires exercising watched/resume actions against a live DVR server
+
+### 2026-04-17 - Expanded writeback endpoint probes after 404 diagnostics
+
+- Request: investigate `No compatible mutation endpoint found` failures when marking movies watched.
+- Rationale: initial probes targeted only a narrow `/api/v1` shape and consistently returned `404`.
+- Symptoms discovered:
+  - watched toggle errors showed every attempted `/api/v1/movies/:id` mutation variant failing with `404`
+  - `Last Mutation` remained `n/a`, indicating no successful write path discovered
+- Solution:
+  - expanded mutation candidates to include likely `/dvr/files/:id` and related `/watch`, `/watched`, `/playback`, `/resume`, `/set` paths
+  - added alternate payload key/value shapes (`true/false`, `1/0`, playback aliases)
+  - added session-level unsupported-signature cache to avoid repeatedly spamming the same failed candidate set during periodic playback sync
+- Validation:
+  - local build and type checks pass; live endpoint discovery still required against actual DVR server behavior
+
+### 2026-04-17 - Mutation failure telemetry and form-body probes
+
+- Request: make failed writeback attempts easier to inspect and try a lower-level body format on the promising `/dvr/files/:id` route.
+- Rationale: `PUT /dvr/files/:id` returned `503` while most other candidates returned `404`, suggesting the route may exist but expect a different request shape.
+- Symptoms discovered:
+  - user-facing error text became very long and hard to compare across attempts
+  - diagnostics only exposed successful mutations, not the most recent failure cause
+- Solution:
+  - added `application/x-www-form-urlencoded` body support in the API client
+  - added form-body variants for `/dvr/files/:id` and related set paths
+  - exposed `Last Failure` alongside `Last Mutation` in player diagnostics and copied playback report output
+- Validation:
+  - local build passes; next live test should reveal whether form-encoded requests change the `/dvr/files/:id` response behavior
 
 ### 2026-04-16 - Version metadata bump to 1.1.8 for hidden-channel release
 
