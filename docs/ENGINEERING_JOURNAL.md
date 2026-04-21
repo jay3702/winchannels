@@ -14,6 +14,18 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-21 - Fix v1.2.0 CI build: MediaCard TypeScript errors
+
+- Request: v1.2.0 GitHub Actions release workflow failed on all four targets.
+- Symptoms: 36 TypeScript errors across all build jobs; `completed` prop used in component body and passed by callers but missing from `MediaCardProps`; unused destructured params (`id`, `commercials`, `filePath`, `recordingKind`) and unused `useStore` import caused `noUnusedLocals` errors.
+- Root cause: the "Restore flags/badges" commit (2026-04-20) added `completed={…}` to `MediaCard` callers and used it inside the component but forgot to declare `completed?: boolean` in `MediaCardProps`, and left no-longer-needed destructured params in the function signature.
+- Solution:
+  - Added `completed?: boolean` to `MediaCardProps` interface.
+  - Removed `useStore` import (unused since RecordingDetail extraction).
+  - Removed `id`, `commercials`, `filePath`, `recordingKind` from the function destructuring (still in the interface; callers may pass them).
+- Validation:
+  - TypeScript diagnostics clean across `MediaCard.tsx`, `TVShows.tsx`, `Movies.tsx`.
+
 ### 2026-04-21 - MediaCard badge row wraps instead of scrolling
 
 - Request: episode/movie cards with many badges were showing a horizontal scrollbar; wrap to a second line instead.

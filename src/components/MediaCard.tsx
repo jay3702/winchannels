@@ -1,5 +1,4 @@
 import { getServerUrl } from '../api/client';
-import { useStore } from '../store/useStore';
 import './MediaCard.css';
 
 interface MediaCardBadge {
@@ -31,6 +30,7 @@ interface MediaCardProps {
   watchedActionLabel?: string;
   watchedActionBusy?: boolean;
   recordingKind?: 'episode' | 'movie' | null;
+  completed?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -54,7 +54,6 @@ function formatDateTime(ms: number): string {
 }
 
 export default function MediaCard({
-  id,
   title,
   subtitle,
   imageUrl,
@@ -63,8 +62,6 @@ export default function MediaCard({
   watched,
   playbackTime = 0,
   badge,
-  commercials,
-  filePath,
   recordedAt,
   recordedAtFormat = 'time',
   onClick,
@@ -75,7 +72,6 @@ export default function MediaCard({
   onToggleWatched,
   watchedActionLabel,
   watchedActionBusy = false,
-  recordingKind = null,
   badges = [],
   completed = true, // default to true for backward compatibility
 }: MediaCardProps) {
