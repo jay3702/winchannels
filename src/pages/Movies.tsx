@@ -32,6 +32,19 @@ function movieAttributes(movie: Movie): Array<{ key: string; label: string; valu
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/** Build MediaCard badges for a movie (mirrors the flags shown in RecordingDetail). */
+function movieBadges(movie: Movie): { label: string; type: 'default' | 'favorite' | 'error' }[] {
+  const out: { label: string; type: 'default' | 'favorite' | 'error' }[] = [];
+  movie.tags?.forEach((t) => out.push({ label: t, type: 'default' }));
+  if (movie.content_rating) out.push({ label: movie.content_rating, type: 'default' });
+  if (movie.favorited)  out.push({ label: 'Favorited',   type: 'favorite' });
+  if (movie.delayed)    out.push({ label: 'Delayed',     type: 'error' });
+  if (movie.cancelled)  out.push({ label: 'Cancelled',   type: 'error' });
+  if (movie.corrupted)  out.push({ label: 'Interrupted', type: 'error' });
+  if (!movie.completed) out.push({ label: 'Recording',   type: 'error' });
+  return out;
+}
+
 export default function Movies() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
@@ -187,7 +200,8 @@ export default function Movies() {
                   duration={movie.duration}
                   watched={movie.watched}
                   playbackTime={movie.playback_time}
-                  badge={movie.content_rating}
+                  badges={movieBadges(movie)}
+                  completed={movie.completed}
                   commercials={movie.commercials}
                   filePath={movie.path}
                   recordedAt={movie.created_at}

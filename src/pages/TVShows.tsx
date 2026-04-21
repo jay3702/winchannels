@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { fetchShows, fetchEpisodesForShow, setEpisodeWatched } from '../api/recordings';
 import type { Show, Episode } from '../api/types';
 import MediaCard from '../components/MediaCard';
+import RecordingDetail from '../components/RecordingDetail';
 import { useStore } from '../store/useStore';
 import './Page.css';
 
@@ -27,43 +28,6 @@ function showIconUrl(show: Show): string | undefined {
   }
 }
 
-function labelKey(key: string): string {
-  return key
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (m) => m.toUpperCase());
-}
-
-function formatValue(value: unknown): string {
-  if (value == null) return '';
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  if (Array.isArray(value)) return value.join(', ');
-  if (typeof value === 'number' && String(value).length >= 12) {
-    // Likely epoch ms timestamp.
-    return new Date(value).toLocaleString('en-US');
-  }
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
-
-function showAttributes(show: Show): Array<{ key: string; label: string; value: string }> {
-  const hidden = new Set(['image_url', 'Image', 'PreferredImage', 'image', 'preferred_image']);
-  const preferredOrder = ['id', 'name', 'summary', 'episode_count', 'number_unwatched', 'favorited', 'genres', 'created_at', 'updated_at'];
-
-  const entries = Object.entries(show)
-    .filter(([key, value]) => !hidden.has(key) && value != null && value !== '')
-    .map(([key, value]) => ({ key, label: labelKey(key), value: formatValue(value) }));
-
-  entries.sort((a, b) => {
-    const ai = preferredOrder.indexOf(a.key);
-    const bi = preferredOrder.indexOf(b.key);
-    const av = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
-    const bv = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
-    return av - bv || a.label.localeCompare(b.label);
-  });
-
-  return entries;
-}
-
 /** Build card title/subtitle with fallbacks for sparse DVR metadata. */
 function epLabel(ep: Episode): { title: string; subtitle?: string } {
   const hasS = ep.season_number != null && Number.isFinite(Number(ep.season_number));
@@ -81,6 +45,19 @@ function epLabel(ep: Episode): { title: string; subtitle?: string } {
   return { title: recordedLabel, subtitle: sub };
 }
 
+/** Build MediaCard badges for an episode (mirrors the flags shown in RecordingDetail). */
+function epBadges(ep: Episode): { label: string; type: 'default' | 'favorite' | 'error' }[] {
+  const out: { label: string; type: 'default' | 'favorite' | 'error' }[] = [];
+  ep.tags?.forEach((t) => out.push({ label: t, type: 'default' }));
+  if (ep.content_rating) out.push({ label: ep.content_rating, type: 'default' });
+  if (ep.favorited)  out.push({ label: 'Favorited',   type: 'favorite' });
+  if (ep.delayed)    out.push({ label: 'Delayed',     type: 'error' });
+  if (ep.cancelled)  out.push({ label: 'Cancelled',   type: 'error' });
+  if (ep.corrupted)  out.push({ label: 'Interrupted', type: 'error' });
+  if (!ep.completed) out.push({ label: 'Recording',   type: 'error' });
+  return out;
+}
+
 export default function TVShows() {
   const [shows, setShows] = useState<Show[]>([]);
   const [selectedShow, setSelectedShow] = useState<Show | null>(null);
@@ -94,7 +71,6 @@ export default function TVShows() {
   const [error, setError] = useState<string | null>(null);
   const [epError, setEpError] = useState<string | null>(null);
   const [watchBusyId, setWatchBusyId] = useState<string | null>(null);
-  const [showMetaOpen, setShowMetaOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
@@ -148,7 +124,6 @@ export default function TVShows() {
     setSelectedShow(null);
     setEpisodes([]);
     setSelectedEpisode(null);
-    setShowMetaOpen(false);
     fetchShows()
       .then((loaded) => {
         setShows(loaded);
@@ -162,22 +137,27 @@ export default function TVShows() {
   }, [requestedShowId, serverChangeVersion]);
 
   function selectShow(show: Show) {
+    console.log('[selectShow] called with:', show);
     setSelectedShow(show);
     setEpisodes([]);
     setSelectedEpisode(null);
-    setShowMetaOpen(false);
     setEpError(null);
     setLoadingEps(true);
     fetchEpisodesForShow(String(show.id))
       .then((eps) => {
+        console.log('[selectShow] episodes loaded:', eps);
         setEpisodes(eps);
-        setSelectedEpisode(eps[0] ?? null);
+        setSelectedEpisode(null);
       })
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e);
+        console.error('[selectShow] error loading episodes:', msg);
         setEpError(msg);
       })
-      .finally(() => setLoadingEps(false));
+      .finally(() => {
+        setLoadingEps(false);
+        console.log('[selectShow] done');
+      });
   }
 
   async function toggleWatched(episode: Episode) {
@@ -228,7 +208,10 @@ export default function TVShows() {
             <li key={show.id}>
               <button
                 className={`show-item ${selectedShow?.id === show.id ? 'show-item--active' : ''}`}
-                onClick={() => selectShow(show)}
+                onClick={() => {
+                  console.log('[show card] clicked', show);
+                  selectShow(show);
+                }}
               >
                 {showIconUrl(show) ? (
                   <img className="show-item__thumb" src={showIconUrl(show)} alt="" aria-hidden="true" />
@@ -242,9 +225,21 @@ export default function TVShows() {
         </ul>
       </aside>
 
-      {/* Episode grid */}
+      {/* Main content */}
       <div className="page__content">
-        {selectedShow ? (
+        {selectedEpisode ? (
+          /* ── Episode detail view ── */
+          <RecordingDetail
+            item={selectedEpisode}
+            onPlay={() => {
+              const { title, subtitle } = epLabel(selectedEpisode);
+              const label = subtitle ? `${title} – ${subtitle}` : title;
+              playItem(selectedEpisode.id, label, selectedEpisode.path, selectedEpisode.commercials, '', selectedEpisode.playback_time, 'episode');
+            }}
+            onNavigateToShow={() => setSelectedEpisode(null)}
+          />
+        ) : selectedShow ? (
+          /* ── Series detail view ── */
           <>
             <header className="page__header">
               <h1 className="page__title">{selectedShow.name}</h1>
@@ -275,42 +270,15 @@ export default function TVShows() {
             {loadingEps && <p className="page__status">Loading episodes…</p>}
             {epError && <p className="page__error">⚠ {epError}</p>}
 
-            {selectedShow && (
-              <section className="media-detail media-detail--full">
+            {(selectedShow.image_url || selectedShow.summary) && (
+              <section className="tv-series-info">
                 {selectedShow.image_url && (
-                  <button
-                    className="media-detail__hero media-detail__hero-btn"
-                    onClick={() => setShowMetaOpen(true)}
-                    title="Show details"
-                  >
-                    <img src={selectedShow.image_url} alt={selectedShow.name} />
-                  </button>
+                  <img className="tv-series-info__image" src={selectedShow.image_url} alt={selectedShow.name} />
                 )}
                 {selectedShow.summary && (
-                  <p className="media-detail__description">{selectedShow.summary}</p>
+                  <p className="tv-series-info__description">{selectedShow.summary}</p>
                 )}
               </section>
-            )}
-
-            {selectedShow && showMetaOpen && (
-              <div className="media-modal-backdrop" onClick={() => setShowMetaOpen(false)}>
-                <div className="media-modal" onClick={(e) => e.stopPropagation()}>
-                  <div className="media-modal__header">
-                    <h3>{selectedShow.name} Details</h3>
-                    <button className="media-modal__close" onClick={() => setShowMetaOpen(false)} aria-label="Close details">
-                      ✕
-                    </button>
-                  </div>
-                  <dl className="media-attrs" aria-label="TV show details">
-                    {showAttributes(selectedShow).map((attr) => (
-                      <div key={attr.key} className="media-attrs__row">
-                        <dt>{attr.label}</dt>
-                        <dd>{attr.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </div>
-              </div>
             )}
 
             <div className="media-grid">
@@ -327,6 +295,8 @@ export default function TVShows() {
                     duration={ep.duration}
                     watched={ep.watched}
                     playbackTime={ep.playback_time}
+                    badges={epBadges(ep)}
+                    completed={ep.completed}
                     commercials={ep.commercials}
                     filePath={ep.path}
                     recordedAt={ep.created_at}
@@ -343,7 +313,6 @@ export default function TVShows() {
                     }}
                     watchedActionBusy={watchBusyId === ep.id}
                     recordingKind="episode"
-                    selected={selectedEpisode?.id === ep.id}
                     ariaLabel={`Select ${subtitle ? `${title} – ${subtitle}` : title}`}
                   />
                 );
@@ -352,6 +321,7 @@ export default function TVShows() {
             </div>
           </>
         ) : (
+          /* ── Empty state ── */
           <div className="page__empty">
             <p>Select a show to see its episodes.</p>
           </div>

@@ -28,3 +28,13 @@
   flex-direction: column;
 }
 
+.app-connecting {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+

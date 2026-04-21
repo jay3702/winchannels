@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore, type ServerOption } from '../store/useStore';
-import { normalizeServerUrl, requestFromServer } from '../api/client';
+import { normalizeServerUrl, requestFromServer, probeUrl } from '../api/client';
 import './Page.css';
 
 function makeServerId(): string {
@@ -11,7 +11,7 @@ function areSameServers(a: ServerOption[], b: ServerOption[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((left, i) => {
     const right = b[i];
-    return left.id === right.id && left.name === right.name && left.url === right.url;
+    return left.id === right.id && left.name === right.name && left.url === right.url && left.tailscaleUrl === right.tailscaleUrl;
   });
 }
 
@@ -39,7 +39,7 @@ export default function Settings() {
     setDraftServers(servers);
   }, [servers]);
 
-  function updateServer(serverId: string, field: 'name' | 'url', value: string) {
+  function updateServer(serverId: string, field: 'name' | 'url' | 'tailscaleUrl', value: string) {
     setDraftServers((prev) =>
       prev.map((server) =>
         server.id === serverId ? { ...server, [field]: value } : server
@@ -78,8 +78,17 @@ export default function Settings() {
         setServerSaveError(`Invalid URL for "${name}". Include scheme and port, e.g. http://192.168.1.4:8189`);
         return null;
       }
-
-      validated.push({ id: server.id || makeServerId(), name, url: normalized });
+      const rawTailscale = (server.tailscaleUrl ?? '').trim();
+      let tailscaleUrl: string | undefined;
+      if (rawTailscale) {
+        const normalizedTs = normalizeServerUrl(rawTailscale);
+        if (!/^https?:\/\/.+:\d+$/.test(normalizedTs)) {
+          setServerSaveError(`Invalid Tailscale URL for "${name}". Include scheme and port, e.g. http://100.64.0.1:8189`);
+          return null;
+        }
+        tailscaleUrl = normalizedTs;
+      }
+      validated.push({ id: server.id || makeServerId(), name, url: normalized, ...(tailscaleUrl ? { tailscaleUrl } : {}) });
     }
 
     if (validated.length === 0) {
@@ -120,12 +129,22 @@ export default function Settings() {
       let okCount = 0;
 
       for (const server of validatedServers) {
-        lines.push(`[${server.name}] ${server.url}`);
+        // Determine which URL to test: probe LAN, fall back to Tailscale
+        let testUrl = server.url;
+        let urlLabel = 'LAN';
+        if (server.tailscaleUrl) {
+          const lanOk = await probeUrl(server.url);
+          if (!lanOk) {
+            testUrl = server.tailscaleUrl;
+            urlLabel = 'Tailscale';
+          }
+        }
+        lines.push(`[${server.name}] ${testUrl} (${urlLabel})`);
         try {
           const [episodes, movies, shows] = await Promise.all([
-            requestFromServer<unknown[]>(server.url, '/api/v1/episodes'),
-            requestFromServer<unknown[]>(server.url, '/api/v1/movies'),
-            requestFromServer<unknown[]>(server.url, '/api/v1/shows'),
+            requestFromServer<unknown[]>(testUrl, '/api/v1/episodes'),
+            requestFromServer<unknown[]>(testUrl, '/api/v1/movies'),
+            requestFromServer<unknown[]>(testUrl, '/api/v1/shows'),
           ]);
 
           const ep = Array.isArray(episodes)
@@ -166,7 +185,8 @@ export default function Settings() {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>URL</th>
+                <th>LAN URL</th>
+                <th>Tailscale URL</th>
               </tr>
             </thead>
             <tbody>
@@ -202,6 +222,16 @@ export default function Settings() {
                       </button>
                     </div>
                   </td>
+                  <td>
+                    <input
+                      className="settings-input"
+                      type="url"
+                      value={server.tailscaleUrl ?? ''}
+                      onChange={(e) => updateServer(server.id, 'tailscaleUrl', e.target.value)}
+                      placeholder="http://100.64.0.1:8189 (optional)"
+                      spellCheck={false}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -217,6 +247,8 @@ export default function Settings() {
           {serverSaveError && <p className="settings-hint settings-hint--warn">{serverSaveError}</p>}
           <p className="settings-hint">
             Add as many servers as you like. Use the server dropdown in the left sidebar to switch instantly.
+            The <strong>Tailscale URL</strong> is optional — if provided, WinChannels will probe the LAN URL on startup
+            and fall back to the Tailscale address when it's unreachable.
           </p>
         </section>
 

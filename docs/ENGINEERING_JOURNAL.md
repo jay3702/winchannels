@@ -14,6 +14,93 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-21 - MediaCard badge row wraps instead of scrolling
+
+- Request: episode/movie cards with many badges were showing a horizontal scrollbar; wrap to a second line instead.
+- Solution:
+  - Changed `.media-card__badges` from `flex-wrap: nowrap; overflow-x: auto` to `flex-wrap: wrap` and removed the overflow scroll.
+  - Tightened gap from `6px` to `4px` so wrapped rows stay compact.
+- Validation:
+  - CSS-only change; TypeScript diagnostics unaffected.
+
+### 2026-04-21 - Fix Tailscale fallback: block page mounts until probe resolves
+
+- Request: app would not load content when launched off-LAN even with a Tailscale URL configured.
+- Symptoms: pages fetched data immediately on mount using the LAN URL before the async probe had a chance to switch to Tailscale, causing all API calls to fail.
+- Root causes:
+  1. Route components mounted and fired `useEffect` data fetches before `probeActiveServer()` finished.
+  2. `probeActiveServer` did not increment `serverChangeVersion` when switching to Tailscale, so pages already mounted would not retry.
+- Solution:
+  - `App.tsx` now tracks a `probing` boolean; while `true`, routes are replaced with a "Connecting…" placeholder so no page mounts until the correct URL is confirmed.
+  - `probeActiveServer` in `useStore.ts` now increments `serverChangeVersion` alongside `serverUrl` when switching to the Tailscale address, triggering a re-fetch on any mounted page.
+- Validation:
+  - TypeScript diagnostics clean across `App.tsx` and `useStore.ts`.
+
+### 2026-04-20 - Restore flags/badges on TV Shows and Movies cards
+
+- Request: badge indicators (favorited, delayed, cancelled, interrupted, content rating, tags) were not appearing on episode or movie cards.
+- Symptoms: cards showed no badges at all despite the data being present on the API objects.
+- Root cause: `MediaCard` calls in `TVShows.tsx` and `Movies.tsx` passed neither `badges` nor `completed` props; the earlier refactoring that removed the show-attributes modal did not re-add the badge-building logic.
+- Solution:
+  - Added `epBadges(ep)` helper to `TVShows.tsx` mirroring the flags shown in `RecordingDetail`.
+  - Added `movieBadges(movie)` helper to `Movies.tsx` with identical logic.
+  - Both `MediaCard` calls now pass `badges={…}` and `completed={…}` instead of the legacy single `badge` prop.
+- Validation:
+  - TypeScript diagnostics clean across both page files.
+
+### 2026-04-20 - Tailscale dual-address support with automatic LAN probe
+
+- Request: support two addresses per server (LAN + Tailscale); on startup probe which is reachable and use LAN if available, Tailscale otherwise.
+- Rationale: users run Channels DVR on a home LAN but also need remote access via Tailscale; the app should auto-select the best URL without manual intervention.
+- Solution:
+  - Added optional `tailscaleUrl` field to `ServerOption` in `useStore.ts` and `parseServers`.
+  - Added `probeUrl(url, timeoutMs)` to `client.ts` — uses `Promise.race` to enforce a 2.5 s timeout; returns `true` if any HTTP response is received (even 4xx), `false` on network error or timeout.
+  - Added `probeActiveServer()` async action to the store — probes the LAN URL, switches `serverUrl` (and `dvr_server_url` in localStorage) to the Tailscale address if LAN is unreachable; falls back to LAN if neither responds.
+  - Added a "Tailscale URL" column to the Settings servers table (optional, validated only if non-empty).
+  - `testConnection` in Settings now probes LAN first and reports which address was used (LAN / Tailscale) when testing.
+  - `App.tsx` calls `probeActiveServer()` on mount and whenever `activeServerId` changes.
+- Validation:
+  - TypeScript diagnostics clean across all four modified files.
+
+### 2026-04-20 - Extract shared RecordingDetail component
+
+- Request: episode detail page in TV Shows should be the identical component rendered in Recent Recordings, not a similar-looking duplicate.
+- Rationale: the two pages were maintaining separate but functionally identical JSX for the detail pane, causing divergence and confusion.
+- Solution:
+  - Created `src/components/RecordingDetail.tsx` with a `RecordingDetailItem` interface satisfied by both `Recording` and `Episode`.
+  - Component accepts `onPlay`, optional `onBack`/`backLabel`, and optional `onNavigateToShow` (renders "View all episodes" link only when provided).
+  - `RecentRecordings` now renders `<RecordingDetail>` with `onNavigateToShow` pointing to `/tv?showId=…`.
+  - `TVShows` now renders `<RecordingDetail>` with `onBack` returning to the series view; no "View all episodes" link (already on that page).
+  - Removed all duplicate inline detail JSX from both pages.
+  - Removed dead helpers from TVShows (`labelKey`, `formatValue`, `showAttributes`, `formatDateTime`, `formatDuration`, `getServerUrl` import) that were only used by the now-deleted show-attributes modal.
+- Validation:
+  - TypeScript diagnostics clean across all three files.
+
+- Request: simplify TV Shows layout to two levels: (1) select show → see series image + description + episode grid; (2) click episode → episode detail view identical to RecentRecordings, with a back button.
+- Rationale: previous layout had three side-by-side columns (show list, episode grid, detail pane) which was cramped and confusing; user wanted a single detail at a time.
+- Solution:
+  - `page__content` now has three conditional branches: episode detail view, series detail view, empty state.
+  - Episode detail view reuses all `rec-detail__*` CSS classes and adds a `← Back to episodes` button calling `setSelectedEpisode(null)`.
+  - Series detail view shows series image + description in a `tv-series-info` flex row, then the episode grid.
+  - Removed third `ep-detail-panel` column entirely.
+  - Removed `showMetaOpen` state and the show-attributes modal.
+  - Removed `useNavigate` (unused), removed auto-select of first episode on show load.
+  - Added `.tv-back-btn` and `.tv-series-info` CSS classes.
+- Validation:
+  - TypeScript diagnostics clean.
+
+- Request: clicking an episode card in the TV Shows page should show the same rec-detail panel used in Recent Recordings.
+- Rationale: the episode grid gave no visual feedback when a card was clicked because `setSelectedEpisode` was called but no detail UI was rendered; the user expected the identical layout to Recent Recordings.
+- Root cause: `selectedEpisode` state was updated on click but the JSX had no conditional branch rendering episode details.
+- Solution:
+  - Added a third flex column (`ep-detail-panel`) to the `page--split` layout in TVShows.tsx, rendered when `selectedEpisode !== null`.
+  - Pane reuses all `rec-detail__*` CSS classes from Page.css (thumbnail, progress bar, meta badges, description, genres).
+  - Added `useNavigate`, `getServerUrl`, `formatDateTime`, and `formatDuration` to TVShows.tsx.
+  - Added `.ep-detail-panel` CSS class (fixed 360 px column, left border, independent scroll).
+  - Empty-state placeholder shown when a show is selected but no episode has been clicked.
+- Validation:
+  - TypeScript diagnostics clean; no errors in TVShows.tsx or Page.css.
+
 ### 2026-04-17 - TV shows filter URL persistence
 
 - Request: persist TV Shows `All`/`Unwatched` filter across refresh and navigation.

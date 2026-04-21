@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getServerUrl, normalizeServerUrl, setServerUrl } from '../api/client';
+import { getServerUrl, normalizeServerUrl, setServerUrl, probeUrl } from '../api/client';
 
 const SHARE_KEY = 'dvr_storage_share';
 const SERVERS_KEY = 'dvr_servers';
@@ -11,7 +11,10 @@ const LIVE_SHOW_HIDDEN_KEY = 'live_show_hidden_channels';
 export interface ServerOption {
   id: string;
   name: string;
+  /** LAN/primary URL configured by the user. */
   url: string;
+  /** Optional Tailscale URL used when the LAN address is unreachable. */
+  tailscaleUrl?: string;
 }
 
 function makeServerId(): string {
@@ -29,8 +32,10 @@ function parseServers(raw: string | null): ServerOption[] {
       const name = String((item as { name?: unknown }).name ?? '').trim();
       const url = normalizeServerUrl(String((item as { url?: unknown }).url ?? ''));
       const idRaw = String((item as { id?: unknown }).id ?? '').trim();
+      const tailscaleRaw = String((item as { tailscaleUrl?: unknown }).tailscaleUrl ?? '').trim();
+      const tailscaleUrl = tailscaleRaw ? normalizeServerUrl(tailscaleRaw) : undefined;
       if (!name || !url) continue;
-      out.push({ id: idRaw || makeServerId(), name, url });
+      out.push({ id: idRaw || makeServerId(), name, url, ...(tailscaleUrl ? { tailscaleUrl } : {}) });
     }
     return out;
   } catch {
@@ -73,6 +78,8 @@ export interface AppState {
   setActiveServer: (id: string) => void;
   setServers: (servers: ServerOption[]) => void;
   setServerUrl: (url: string) => void;
+  /** Probe the active server's LAN URL; if unreachable and a Tailscale URL is configured, switch to it. */
+  probeActiveServer: () => Promise<void>;
 
   // UNC / local path to the root of the DVR storage share, e.g.
   // e.g. \\192.168.x.x\AllMedia\Channels  — used to find SRT sidecar files.
@@ -141,6 +148,7 @@ export const useStore = create<AppState>((set) => ({
         id: s.id?.trim() || makeServerId(),
         name: s.name.trim(),
         url: normalizeServerUrl(s.url),
+        ...(s.tailscaleUrl?.trim() ? { tailscaleUrl: normalizeServerUrl(s.tailscaleUrl.trim()) } : {}),
       }))
       .filter((s) => s.name && s.url);
 
@@ -189,6 +197,37 @@ export const useStore = create<AppState>((set) => ({
         nowPlayingRecordingKind: null,
       };
     });
+  },
+
+  probeActiveServer: async () => {
+    const { servers, activeServerId } = useStore.getState();
+    const active = servers.find((s) => s.id === activeServerId);
+    if (!active) return;
+
+    const lanReachable = await probeUrl(active.url);
+    if (lanReachable) {
+      // Already using the LAN URL — ensure it's set (no-op if unchanged)
+      setServerUrl(active.url);
+      set({ serverUrl: normalizeServerUrl(active.url) });
+      return;
+    }
+
+    if (active.tailscaleUrl) {
+      const tailscaleReachable = await probeUrl(active.tailscaleUrl);
+      if (tailscaleReachable) {
+        setServerUrl(active.tailscaleUrl);
+        set((state) => ({
+          serverUrl: normalizeServerUrl(active.tailscaleUrl!),
+          serverChangeVersion: state.serverChangeVersion + 1,
+        }));
+        console.info(`[Network] LAN unreachable; switched to Tailscale URL for "${active.name}"`);
+        return;
+      }
+    }
+
+    // Neither URL responded — keep the configured LAN URL (connection will surface its own error)
+    setServerUrl(active.url);
+    set({ serverUrl: normalizeServerUrl(active.url) });
   },
 
   storageSharePath: localStorage.getItem(SHARE_KEY) ?? '',

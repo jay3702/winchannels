@@ -27,6 +27,21 @@ export function setServerUrl(url: string): void {
   localStorage.setItem('dvr_server_url', normalizeServerUrl(url));
 }
 
+/**
+ * Returns true if the server at `url` responds within `timeoutMs`.
+ * Uses the lightweight GET /api/v1/status endpoint.
+ * Any HTTP response (even 4xx) counts as reachable — only a network error or
+ * timeout counts as unreachable.
+ */
+export async function probeUrl(url: string, timeoutMs = 2500): Promise<boolean> {
+  const normalized = normalizeServerUrl(url);
+  const fetchProbe = httpFetch(`${normalized}/api/v1/status`)
+    .then(() => true)
+    .catch(() => false);
+  const timeout = new Promise<false>((resolve) => setTimeout(() => resolve(false), timeoutMs));
+  return Promise.race([fetchProbe, timeout]);
+}
+
 // Use Tauri's HTTP plugin fetch so requests go through Rust (bypasses CORS).
 // Falls back to window.fetch when running outside Tauri (e.g. browser dev).
 async function httpFetch(url: string, init?: RequestInit): Promise<Response> {

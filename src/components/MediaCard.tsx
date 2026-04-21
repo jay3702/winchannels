@@ -2,6 +2,11 @@ import { getServerUrl } from '../api/client';
 import { useStore } from '../store/useStore';
 import './MediaCard.css';
 
+interface MediaCardBadge {
+  label: string;
+  type: 'default' | 'favorite' | 'error';
+}
+
 interface MediaCardProps {
   id: string;
   title: string;
@@ -11,7 +16,8 @@ interface MediaCardProps {
   duration: number;
   watched: boolean;
   playbackTime?: number;
-  badge?: string;
+  badge?: string; // legacy, single badge
+  badges?: MediaCardBadge[]; // new, multiple badges
   commercials?: number[];
   filePath?: string;
   recordedAt?: number;
@@ -70,27 +76,36 @@ export default function MediaCard({
   watchedActionLabel,
   watchedActionBusy = false,
   recordingKind = null,
+  badges = [],
+  completed = true, // default to true for backward compatibility
 }: MediaCardProps) {
-  const { playItem } = useStore();
-  const serverUrl = getServerUrl();
+  // Always use an array for badges
+  const safeBadges = badges ?? [];
 
   // Resolve relative thumbnail URLs against the server
-  const resolvedThumb =
-    thumbnailUrl?.startsWith('http') ? thumbnailUrl
-    : thumbnailUrl ? `${serverUrl}${thumbnailUrl}`
+  const resolvedThumb = thumbnailUrl?.startsWith('http') ? thumbnailUrl
+    : thumbnailUrl ? `${getServerUrl()}${thumbnailUrl}`
     : imageUrl ?? null;
 
-  const progress = duration > 0 ? Math.min((playbackTime / duration) * 100, 100) : 0;
-  const label = subtitle ? `${title} – ${subtitle}` : title;
-  const handleClick = onClick ?? (() => playItem(id, label, filePath, commercials, '', playbackTime, recordingKind));
-  const resolvedAriaLabel = ariaLabel ?? (onClick ? `Select ${label}` : `Play ${label}`);
   const toggleLabel = watchedActionLabel ?? (watched ? 'Mark unwatched' : 'Mark watched');
 
+  // Calculate progress bar (if needed)
+  const progress = duration > 0 && playbackTime > 0 ? Math.min(100, Math.round((playbackTime / duration) * 100)) : 0;
+
   return (
-    <button
+    <div
       className={`media-card ${watched ? 'media-card--watched' : ''} ${selected ? 'media-card--selected' : ''}`}
-      onClick={handleClick}
-      aria-label={resolvedAriaLabel}
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      aria-label={ariaLabel}
+      onKeyDown={e => {
+        if (!onClick) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
     >
       <div className="media-card__art">
         {resolvedThumb ? (
@@ -101,11 +116,11 @@ export default function MediaCard({
         {onPlayAction && (
           <button
             className="media-card__play-action"
-            onClick={(e) => {
+            onClick={e => {
               e.stopPropagation();
               onPlayAction();
             }}
-            aria-label={`${playActionLabel} ${label}`}
+            aria-label={`${playActionLabel} ${title}`}
             title={playActionLabel}
           >
             ▶
@@ -114,37 +129,51 @@ export default function MediaCard({
         {onToggleWatched && (
           <button
             className="media-card__watch-action"
-            onClick={(e) => {
+            onClick={e => {
               e.stopPropagation();
               if (!watchedActionBusy) onToggleWatched();
             }}
-            aria-label={`${toggleLabel} ${label}`}
+            aria-label={`${toggleLabel} ${title}`}
             title={toggleLabel}
             disabled={watchedActionBusy}
           >
-            {watchedActionBusy ? '…' : (watched ? '↺' : '✓')}
+            {watchedActionBusy ? '…' : watched ? '↺' : '✓'}
           </button>
         )}
-        {badge && <span className="media-card__badge">{badge}</span>}
-        {watched && !onToggleWatched && <span className="media-card__watched-dot" aria-label="Watched" />}
       </div>
-
       <div className="media-card__info">
         <span className="media-card__title">{title}</span>
         {subtitle && <span className="media-card__subtitle">{subtitle}</span>}
-        <span className="media-card__duration">{formatDuration(duration)}</span>
-        {recordedAt != null && (
-          <span className="media-card__time">
-            {recordedAtFormat === 'datetime' ? formatDateTime(recordedAt) : formatTime(recordedAt)}
+        <span className="media-card__badges">
+          {safeBadges.length > 0
+            ? safeBadges.map((b, i) => (
+                <span
+                  key={b.label + i}
+                  className={`media-card__badge${b.type !== 'default' ? ` media-card__badge--${b.type}` : ''}`}
+                >
+                  {b.label}
+                </span>
+              ))
+            : badge && <span className="media-card__badge">{badge}</span>}
+        </span>
+        <div className="media-card__meta-row">
+          {recordedAt != null && (
+            <span className="media-card__time">
+              {recordedAtFormat === 'datetime'
+                ? formatDateTime(recordedAt)
+                : formatTime(recordedAt)}
+            </span>
+          )}
+          <span className="media-card__duration">
+            {completed === false ? 'Recording' : formatDuration(duration)}
           </span>
-        )}
+        </div>
       </div>
-
       {progress > 0 && !watched && (
         <div className="media-card__progress">
           <div className="media-card__progress-fill" style={{ width: `${progress}%` }} />
         </div>
       )}
-    </button>
+    </div>
   );
 }

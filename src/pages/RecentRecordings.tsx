@@ -5,6 +5,7 @@ import type { Channel, Recording } from '../api/types';
 import { useStore } from '../store/useStore';
 import type { AppState } from '../store/useStore';
 import { applyLogoFallback, buildChannelLogoMap, logoForChannelKey } from '../lib/channelLogos';
+import RecordingDetail from '../components/RecordingDetail';
 import './Page.css';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -37,21 +38,6 @@ function groupByDayTime(recordings: Recording[]) {
     groups[groups.length - 1].timeGroups[groups[groups.length - 1].timeGroups.length - 1].items.push(rec);
   }
   return groups;
-}
-
-function formatDateTime(ms: number) {
-  const d = new Date(ms);
-  return (
-    d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) +
-    ' at ' +
-    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  );
-}
-
-function formatDuration(seconds: number) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 function recLabel(rec: Recording) {
@@ -191,75 +177,22 @@ export default function RecentRecordings() {
       {/* RIGHT: detail pane */}
       <div className="page__content">
         {selected ? (
-          <div className="rec-detail">
-            <button
-              className="rec-detail__thumb"
-              onClick={() => playItem(
-                selected.id,
-                recLabel(selected),
-                selected.path,
-                selected.commercials,
-                '',
-                selected.playback_time,
-                selected.show_id ? 'episode' : 'movie'
-              )}
-              title="Play recording"
-            >
-              <img src={selected.thumbnail_url} alt={recLabel(selected)} />
-              <div className="rec-detail__play-icon">▶</div>
-            </button>
-
-            <div className="rec-detail__body">
-
-              <h2 className="rec-detail__title">{selected.title}</h2>
-
-              {/* Progress bar for in-progress, unwatched recordings */}
-              {selected.duration > 0 && !selected.watched && (selected.playback_time ?? 0) > 0 && (
-                <span className="rec-detail__progress" aria-hidden="true">
-                  <span
-                    className="rec-detail__progress-fill"
-                    style={{ width: `${Math.min(((selected.playback_time ?? 0) / selected.duration) * 100, 100)}%` }}
-                  />
-                </span>
-              )}
-
-              {selected.episode_title && (
-                <p className="rec-detail__episode">
-                  {selected.season_number != null && selected.episode_number != null
-                    ? `S${selected.season_number}E${selected.episode_number} — `
-                    : ''}
-                  {selected.episode_title}
-                </p>
-              )}
-
-              <p className="rec-detail__meta">
-                <span>{formatDateTime(selected.created_at)}</span>
-                {selected.content_rating && (
-                  <span className="rec-detail__badge">{selected.content_rating}</span>
-                )}
-                <span className="rec-detail__duration">{formatDuration(selected.duration)}</span>
-              </p>
-
-              {(selected.full_summary ?? selected.summary) && (
-                <p className="rec-detail__description">
-                  {selected.full_summary ?? selected.summary}
-                </p>
-              )}
-
-              {selected.genres && selected.genres.length > 0 && (
-                <p className="rec-detail__genres">{selected.genres.join(' · ')}</p>
-              )}
-
-              {selected.show_id && (
-                <button
-                  className="rec-detail__show-link"
-                  onClick={() => navigate(`/tv?showId=${selected.show_id}`)}
-                >
-                  View all episodes of {selected.title} →
-                </button>
-              )}
-            </div>
-          </div>
+          <RecordingDetail
+            item={selected}
+            onPlay={() => playItem(
+              selected.id,
+              recLabel(selected),
+              selected.path,
+              selected.commercials,
+              '',
+              selected.playback_time,
+              selected.show_id ? 'episode' : 'movie'
+            )}
+            onNavigateToShow={selected.show_id
+              ? () => navigate(`/tv?showId=${selected.show_id}`)
+              : undefined
+            }
+          />
         ) : (
           <div className="page__empty">
             <p>Select a recording to see details.</p>
