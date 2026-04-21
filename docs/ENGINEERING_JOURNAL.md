@@ -14,6 +14,22 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-21 - API version guard: block write actions on server update
+
+- Request: Channels DVR occasionally ships breaking API changes. After a server update, mutations that worked before could produce unintended side effects. Implement a version check that blocks or warns about write actions until the user explicitly confirms the new version is safe.
+- Rationale: The DVR API is undocumented and subject to change at any release. A silent break is worse than a visible prompt.
+- Solution:
+  - Added `fetchServerVersion(serverUrl)` to `client.ts` — hits `/api/v1/status` and extracts a version string. Returns `null` gracefully on any failure.
+  - Extended `probeActiveServer()` in `useStore.ts` to fetch the version after a successful URL probe, then compare against a per-server approved version map stored in `localStorage` under `dvr_api_approved_versions`.
+  - First connection to a server auto-approves the current version (no false alarm for new installs).
+  - Added `apiVersion: string | null` and `apiVersionApproved: boolean` to store state; `approveApiVersion()` action saves the current version as approved for the active server.
+  - `App.tsx` renders a persistent amber banner when `!probing && !apiVersionApproved`, with a link to Settings.
+  - Settings page gains an "API Compatibility" section showing the detected version, approval status, and an "Approve v{version}" button.
+  - `TVShows.toggleWatched` and `Movies.toggleWatched` check `apiVersionApproved` and surface an inline error rather than calling the API when blocked.
+  - VideoPlayer automatic playback-position writeback is intentionally not blocked — it is low-risk and blocking it mid-playback would be disruptive.
+- Validation:
+  - TypeScript diagnostics clean across all six modified files.
+
 ### 2026-04-21 - Fix v1.2.0 CI build: MediaCard TypeScript errors
 
 - Request: v1.2.0 GitHub Actions release workflow failed on all four targets.

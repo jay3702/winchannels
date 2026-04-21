@@ -27,6 +27,9 @@ export default function Settings() {
     setDiagnosticsEnabled,
     showHiddenLiveChannels,
     setShowHiddenLiveChannels,
+    apiVersion,
+    apiVersionApproved,
+    approveApiVersion,
   } = useStore();
   const [draftServers, setDraftServers] = useState<ServerOption[]>(servers);
   const [shareDraft, setShareDraft] = useState(storageSharePath);
@@ -331,6 +334,32 @@ export default function Settings() {
             <pre className={`settings-test-result ${testResult.startsWith('✓') ? 'settings-test-result--ok' : 'settings-test-result--err'}`}>
               {testResult}
             </pre>
+          )}
+        </section>
+
+        <section className="settings-section">
+          <h2 className="settings-section__title">API Compatibility</h2>
+          {apiVersion ? (
+            <>
+              <p className="settings-hint">
+                Detected server version: <strong>{apiVersion}</strong>
+              </p>
+              {apiVersionApproved ? (
+                <p className="settings-hint settings-hint--ok">✓ This version is approved. Write actions are enabled.</p>
+              ) : (
+                <>
+                  <p className="settings-hint settings-hint--warn">
+                    ⚠ The server was updated to <strong>{apiVersion}</strong>. Write actions (mark watched, etc.) are
+                    blocked until you confirm the API is still compatible with this app.
+                  </p>
+                  <button className="settings-save-btn" onClick={approveApiVersion}>
+                    Approve v{apiVersion}
+                  </button>
+                </>
+              )}
+            </>
+          ) : (
+            <p className="settings-hint">Version not yet detected. Connect to a server first.</p>
           )}
         </section>
 

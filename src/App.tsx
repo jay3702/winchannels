@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Link, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import VideoPlayer from './components/VideoPlayer';
 import RecentRecordings from './pages/RecentRecordings';
@@ -12,7 +12,7 @@ import { useStore } from './store/useStore';
 import './App.css';
 
 function App() {
-  const { activeServerId, probeActiveServer } = useStore();
+  const { activeServerId, probeActiveServer, apiVersionApproved } = useStore();
   const [probing, setProbing] = useState(true);
 
   // On startup and whenever the active server changes, probe the LAN URL and
@@ -29,6 +29,12 @@ function App() {
       <div className="app-shell">
         <Sidebar />
         <main className="app-main">
+          {!probing && !apiVersionApproved && (
+            <div className="api-version-banner" role="alert">
+              <span>⚠ Server software was updated. Write actions are blocked until you review and approve the new version.</span>
+              <Link to="/settings" className="api-version-banner__link">Review in Settings</Link>
+            </div>
+          )}
           {probing ? (
             <div className="app-connecting">Connecting…</div>
           ) : (

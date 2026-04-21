@@ -154,3 +154,20 @@ export function previewUrl(fileId: string): string {
   // Thumbnail images are always absolute (displayed via <img>, not fetch)
   return `${getServerUrl()}/dvr/files/${fileId}/preview.jpg`;
 }
+
+// ── Server version ────────────────────────────────────────────────────────
+
+/**
+ * Fetch the version string from /api/v1/status.
+ * Returns the version on success, null if the endpoint is unreachable or the
+ * response does not include a recognisable version field.
+ */
+export async function fetchServerVersion(serverUrl: string): Promise<string | null> {
+  try {
+    const data = await requestFromServer<Record<string, unknown>>(serverUrl, '/api/v1/status');
+    const v = data['version'] ?? data['Version'] ?? data['build'] ?? null;
+    return typeof v === 'string' && v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}

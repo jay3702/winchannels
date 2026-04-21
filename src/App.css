@@ -38,3 +38,28 @@
   letter-spacing: 0.04em;
 }
 
+/* ── API version change banner ──────────────────────────────────────────── */
+
+.api-version-banner {
+  background: #3a1a00;
+  border-bottom: 1px solid #7a3800;
+  color: #ffc07a;
+  font-size: 12px;
+  padding: 7px 14px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.api-version-banner__link {
+  color: #ff8c30;
+  text-decoration: underline;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.api-version-banner__link:hover {
+  color: #ffaa60;
+}
+

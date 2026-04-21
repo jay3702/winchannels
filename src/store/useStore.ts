@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getServerUrl, normalizeServerUrl, setServerUrl, probeUrl } from '../api/client';
+import { getServerUrl, normalizeServerUrl, setServerUrl, probeUrl, fetchServerVersion } from '../api/client';
 
 const SHARE_KEY = 'dvr_storage_share';
 const SERVERS_KEY = 'dvr_servers';
@@ -7,6 +7,7 @@ const ACTIVE_SERVER_KEY = 'dvr_active_server_id';
 const PLAYBACK_REMUX_KEY = 'playback_prefer_remux';
 const DIAGNOSTICS_ENABLED_KEY = 'diagnostics_enabled';
 const LIVE_SHOW_HIDDEN_KEY = 'live_show_hidden_channels';
+const API_VERSIONS_KEY = 'dvr_api_approved_versions';
 
 export interface ServerOption {
   id: string;
@@ -19,6 +20,22 @@ export interface ServerOption {
 
 function makeServerId(): string {
   return `srv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function loadApprovedVersions(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(API_VERSIONS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    return parsed as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function saveApprovedVersions(versions: Record<string, string>): void {
+  localStorage.setItem(API_VERSIONS_KEY, JSON.stringify(versions));
 }
 
 function parseServers(raw: string | null): ServerOption[] {
@@ -81,6 +98,13 @@ export interface AppState {
   /** Probe the active server's LAN URL; if unreachable and a Tailscale URL is configured, switch to it. */
   probeActiveServer: () => Promise<void>;
 
+  /** Version string last reported by the active server's /api/v1/status endpoint. */
+  apiVersion: string | null;
+  /** True when the detected server version matches the last user-approved version. */
+  apiVersionApproved: boolean;
+  /** Record the current detected version as approved, re-enabling write actions. */
+  approveApiVersion: () => void;
+
   // UNC / local path to the root of the DVR storage share, e.g.
   // e.g. \\192.168.x.x\AllMedia\Channels  — used to find SRT sidecar files.
   storageSharePath: string;
@@ -121,6 +145,8 @@ export const useStore = create<AppState>((set) => ({
   activeServerId: bootActive.id,
   serverUrl: bootActive.url,
   serverChangeVersion: 0,
+  apiVersion: null,
+  apiVersionApproved: true, // assume approved until a version change is detected
 
   setActiveServer: (id: string) => {
     set((state) => {
@@ -204,15 +230,16 @@ export const useStore = create<AppState>((set) => ({
     const active = servers.find((s) => s.id === activeServerId);
     if (!active) return;
 
+    let resolvedUrl = normalizeServerUrl(active.url);
+    let reachable = false;
+
     const lanReachable = await probeUrl(active.url);
     if (lanReachable) {
-      // Already using the LAN URL — ensure it's set (no-op if unchanged)
       setServerUrl(active.url);
       set({ serverUrl: normalizeServerUrl(active.url) });
-      return;
-    }
-
-    if (active.tailscaleUrl) {
+      resolvedUrl = normalizeServerUrl(active.url);
+      reachable = true;
+    } else if (active.tailscaleUrl) {
       const tailscaleReachable = await probeUrl(active.tailscaleUrl);
       if (tailscaleReachable) {
         setServerUrl(active.tailscaleUrl);
@@ -220,14 +247,44 @@ export const useStore = create<AppState>((set) => ({
           serverUrl: normalizeServerUrl(active.tailscaleUrl!),
           serverChangeVersion: state.serverChangeVersion + 1,
         }));
+        resolvedUrl = normalizeServerUrl(active.tailscaleUrl);
+        reachable = true;
         console.info(`[Network] LAN unreachable; switched to Tailscale URL for "${active.name}"`);
-        return;
       }
     }
 
-    // Neither URL responded — keep the configured LAN URL (connection will surface its own error)
-    setServerUrl(active.url);
-    set({ serverUrl: normalizeServerUrl(active.url) });
+    if (!reachable) {
+      // Neither URL responded — keep the configured LAN URL (connection will surface its own error)
+      setServerUrl(active.url);
+      set({ serverUrl: normalizeServerUrl(active.url) });
+      return;
+    }
+
+    // Version check: compare detected version against the user-approved version for this server.
+    const detected = await fetchServerVersion(resolvedUrl);
+    if (detected) {
+      const currentServerId = useStore.getState().activeServerId;
+      const approvedVersions = loadApprovedVersions();
+      const approvedVersion = approvedVersions[currentServerId];
+      if (!approvedVersion) {
+        // First time connecting to this server — auto-approve the current version.
+        saveApprovedVersions({ ...approvedVersions, [currentServerId]: detected });
+        set({ apiVersion: detected, apiVersionApproved: true });
+      } else if (approvedVersion === detected) {
+        set({ apiVersion: detected, apiVersionApproved: true });
+      } else {
+        set({ apiVersion: detected, apiVersionApproved: false });
+      }
+    }
+  },
+
+  approveApiVersion: () => {
+    const { apiVersion, activeServerId } = useStore.getState();
+    if (!apiVersion) return;
+    const versions = loadApprovedVersions();
+    versions[activeServerId] = apiVersion;
+    saveApprovedVersions(versions);
+    set({ apiVersionApproved: true });
   },
 
   storageSharePath: localStorage.getItem(SHARE_KEY) ?? '',

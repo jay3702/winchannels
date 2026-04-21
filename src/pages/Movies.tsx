@@ -56,6 +56,7 @@ export default function Movies() {
   const [sort, setSort] = useState<SortMode>('date');
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
+  const apiVersionApproved = useStore((s) => s.apiVersionApproved);
 
   useEffect(() => {
     setLoading(true);
@@ -82,6 +83,10 @@ export default function Movies() {
   }, [displayed, sort]);
 
   async function toggleWatched(movie: Movie) {
+    if (!apiVersionApproved) {
+      setActionError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
+      return;
+    }
     const nextWatched = !movie.watched;
     const previous = movies;
 

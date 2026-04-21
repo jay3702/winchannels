@@ -559,6 +559,10 @@
   color: #e07b00;
 }
 
+.settings-hint--ok {
+  color: #4caf50;
+}
+
 .settings-hint--about {
   color: #a8b0c2;
   margin-top: 4px;
