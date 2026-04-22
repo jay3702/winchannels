@@ -14,6 +14,36 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+## v1.2.1 — 2026-04-21
+
+### 2026-04-21 - Gate "Mark as Not Recorded" on DVR rule association
+
+- Request: "Mark as Not Recorded" only makes sense for recordings created by a DVR pass/rule. Disable the button for manually-recorded or otherwise unassociated files.
+- Rationale: the action removes the program record so the DVR can re-record it — meaningless unless a rule is watching for it. Showing it unconditionally would confuse users.
+- Solution:
+  - Added `DvrFile` interface to `types.ts` with `ID`, `RuleID`, and companion fields from the `/dvr/files/{id}` response.
+  - Added `fetchDvrFile(id)` to `recordings.ts` that GETs `/dvr/files/{id}`.
+  - In `TVShows.tsx`: added `selectedEpisodeRuleId` state and a `selectEpisode(ep)` helper that calls `setSelectedEpisode` then fires `fetchDvrFile` in the background, updating `selectedEpisodeRuleId` on resolve. `onMarkNotRecorded` is now only passed when both `selectedEpisodeRuleId` is non-empty and `program_id` is present.
+  - In `RecentRecordings.tsx`: same pattern with `selectedRuleId` state and `selectRecording(rec)` helper. State is also cleared on server reload (`useEffect` dependency on `serverChangeVersion`).
+  - The `fetchDvrFile` call is fire-and-forget from the user's perspective — the button simply appears after the detail pane loads, with no visible loading state.
+- Validation:
+  - TypeScript diagnostics clean across all modified files.
+
+### 2026-04-21 - Trash and Mark as Not Recorded actions on episode detail
+
+- Request: add two mutation buttons to the episode/recording detail pane — "Trash" (permanently delete the file) and "Mark as Not Recorded" (remove the program record so the DVR can re-record it).
+- Rationale: common DVR housekeeping tasks; the curl equivalents are `DELETE /dvr/files/{id}` and `DELETE /dvr/programs/{program_id}`.
+- Solution:
+  - Added `trashRecording(id)` (`DELETE /dvr/files/{id}`) and `markAsNotRecorded(programId)` (`DELETE /dvr/programs/{programId}`) to `src/api/recordings.ts` using the existing `runMutationCandidates` plumbing.
+  - Added `program_id?: string` to `RecordingDetailItem` so callers can pass the EPxxxxxx identifier.
+  - Added `onTrash` and `onMarkNotRecorded` optional callback props to `RecordingDetail`; the Trash button wraps its callback in a `window.confirm` to prevent accidental deletion.
+  - Added `.rec-detail__actions` flex container and `.rec-detail__action-btn--secondary` / `--danger` styles to `Page.css`.
+  - `TVShows.tsx`: added `handleTrashEpisode` and `handleMarkNotRecorded` handlers that call the API, optimistically remove the episode from the list, and deselect it on success. Both respect the `apiVersionApproved` guard.
+  - `RecentRecordings.tsx`: same handlers; added `actionError` state displayed above the detail pane; wired `apiVersionApproved` from the store.
+  - `onMarkNotRecorded` is only passed when `program_id` is present on the item.
+- Validation:
+  - TypeScript diagnostics clean across all modified files.
+
 ### 2026-04-21 - API version guard: block write actions on server update
 
 - Request: Channels DVR occasionally ships breaking API changes. After a server update, mutations that worked before could produce unintended side effects. Implement a version check that blocks or warns about write actions until the user explicitly confirms the new version is safe.

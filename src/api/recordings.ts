@@ -1,5 +1,5 @@
 import request, { requestWithMethod } from './client';
-import type { Episode, Movie, Recording, Show, ListParams, Channel } from './types';
+import type { Episode, Movie, Recording, Show, ListParams, Channel, DvrFile } from './types';
 
 // ── Shows ──────────────────────────────────────────────────────────────────
 
@@ -127,4 +127,24 @@ export function setEpisodePlaybackTime(id: string, playbackTime: number): Promis
 
 export function setMoviePlaybackTime(id: string, playbackTime: number): Promise<void> {
   return runMutationCandidates(buildPlaybackCandidates(id, playbackTime));
+}
+
+// ── Destructive mutations ──────────────────────────────────────────────────
+
+/** Fetch the raw DVR file record. Used to check RuleID (pass association). */
+export function fetchDvrFile(id: string): Promise<DvrFile> {
+  return request<DvrFile>(`/dvr/files/${id}`);
+}
+
+/** Permanently delete the recording file from the DVR. */
+export function trashRecording(id: string): Promise<void> {
+  return runMutationCandidates([{ path: `/dvr/files/${id}`, method: 'DELETE' }]);
+}
+
+/**
+ * Mark a program as "not recorded" so the DVR will re-record it.
+ * Uses the program_id field (EPxxxxxxxx) from the recording.
+ */
+export function markAsNotRecorded(programId: string): Promise<void> {
+  return runMutationCandidates([{ path: `/dvr/programs/${programId}`, method: 'DELETE' }]);
 }

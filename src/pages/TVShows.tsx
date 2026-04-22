@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { fetchShows, fetchEpisodesForShow, setEpisodeWatched } from '../api/recordings';
+import { fetchShows, fetchEpisodesForShow, setEpisodeWatched, trashRecording, markAsNotRecorded, fetchDvrFile } from '../api/recordings';
 import type { Show, Episode } from '../api/types';
 import MediaCard from '../components/MediaCard';
 import RecordingDetail from '../components/RecordingDetail';
@@ -71,6 +71,7 @@ export default function TVShows() {
   const [error, setError] = useState<string | null>(null);
   const [epError, setEpError] = useState<string | null>(null);
   const [watchBusyId, setWatchBusyId] = useState<string | null>(null);
+  const [selectedEpisodeRuleId, setSelectedEpisodeRuleId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
@@ -142,6 +143,7 @@ export default function TVShows() {
     setSelectedShow(show);
     setEpisodes([]);
     setSelectedEpisode(null);
+    setSelectedEpisodeRuleId(null);
     setEpError(null);
     setLoadingEps(true);
     fetchEpisodesForShow(String(show.id))
@@ -187,6 +189,48 @@ export default function TVShows() {
       setEpError(`Failed to update watched state: ${msg}`);
     } finally {
       setWatchBusyId(null);
+    }
+  }
+
+  function selectEpisode(ep: Episode) {
+    setSelectedEpisode(ep);
+    setSelectedEpisodeRuleId(null);
+    fetchDvrFile(ep.id)
+      .then((file) => setSelectedEpisodeRuleId(file.RuleID || null))
+      .catch(() => setSelectedEpisodeRuleId(null));
+  }
+
+  async function handleTrashEpisode(episode: Episode) {
+    if (!apiVersionApproved) {
+      setEpError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
+      return;
+    }
+    try {
+      await trashRecording(episode.id);
+      setEpisodes((list) => list.filter((ep) => ep.id !== episode.id));
+      setSelectedEpisode(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setEpError(`Failed to trash recording: ${msg}`);
+    }
+  }
+
+  async function handleMarkNotRecorded(episode: Episode) {
+    if (!apiVersionApproved) {
+      setEpError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
+      return;
+    }
+    const programId = episode.program_id;
+    if (!programId) {
+      setEpError('Cannot mark as not recorded: program_id is missing.');
+      return;
+    }
+    try {
+      await markAsNotRecorded(programId);
+      setSelectedEpisode(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setEpError(`Failed to mark as not recorded: ${msg}`);
     }
   }
 
@@ -242,6 +286,8 @@ export default function TVShows() {
               playItem(selectedEpisode.id, label, selectedEpisode.path, selectedEpisode.commercials, '', selectedEpisode.playback_time, 'episode');
             }}
             onNavigateToShow={() => setSelectedEpisode(null)}
+            onTrash={() => void handleTrashEpisode(selectedEpisode)}
+            onMarkNotRecorded={selectedEpisodeRuleId && selectedEpisode.program_id ? () => void handleMarkNotRecorded(selectedEpisode) : undefined}
           />
         ) : selectedShow ? (
           /* ── Series detail view ── */
@@ -306,7 +352,7 @@ export default function TVShows() {
                     filePath={ep.path}
                     recordedAt={ep.created_at}
                     recordedAtFormat="datetime"
-                    onClick={() => setSelectedEpisode(ep)}
+                    onClick={() => selectEpisode(ep)}
                     onPlayAction={() => {
                       const { title, subtitle } = epLabel(ep);
                       const label = subtitle ? `${title} – ${subtitle}` : title;

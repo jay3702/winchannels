@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchChannels, fetchRecordings } from '../api/recordings';
+import { fetchChannels, fetchRecordings, trashRecording, markAsNotRecorded, fetchDvrFile } from '../api/recordings';
 import type { Channel, Recording } from '../api/types';
 import { useStore } from '../store/useStore';
 import type { AppState } from '../store/useStore';
@@ -54,19 +54,64 @@ export default function RecentRecordings() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [channelLogos, setChannelLogos] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Recording | null>(null);
+  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
   const navigate = useNavigate();
   const playItem = useStore((s: AppState) => s.playItem);
   const serverChangeVersion = useStore((s: AppState) => s.serverChangeVersion);
+  const apiVersionApproved = useStore((s: AppState) => s.apiVersionApproved);
+
+  function selectRecording(rec: Recording) {
+    setSelected(rec);
+    setSelectedRuleId(null);
+    fetchDvrFile(rec.id)
+      .then((file) => setSelectedRuleId(file.RuleID || null))
+      .catch(() => setSelectedRuleId(null));
+  }
+
+  async function handleTrash(rec: Recording) {
+    if (!apiVersionApproved) {
+      setActionError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
+      return;
+    }
+    try {
+      await trashRecording(rec.id);
+      setRecordings((list) => list.filter((r) => r.id !== rec.id));
+      setSelected(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setActionError(`Failed to trash recording: ${msg}`);
+    }
+  }
+
+  async function handleMarkNotRecorded(rec: Recording) {
+    if (!apiVersionApproved) {
+      setActionError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
+      return;
+    }
+    if (!rec.program_id) {
+      setActionError('Cannot mark as not recorded: program_id is missing.');
+      return;
+    }
+    try {
+      await markAsNotRecorded(rec.program_id);
+      setSelected(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setActionError(`Failed to mark as not recorded: ${msg}`);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     setSelected(null);
+    setSelectedRuleId(null);
     void (async () => {
       try {
         const [loadedRecordings, loadedChannels] = await Promise.all([
@@ -140,7 +185,7 @@ export default function RecentRecordings() {
                       <button
                         key={rec.id}
                         className={`rec-item ${selected?.id === rec.id ? 'rec-item--active' : ''}`}
-                        onClick={() => setSelected(rec)}
+                        onClick={() => selectRecording(rec)}
                       >
                         {logoUrl && (
                           <img
@@ -176,6 +221,7 @@ export default function RecentRecordings() {
 
       {/* RIGHT: detail pane */}
       <div className="page__content">
+        {actionError && <p className="page__error">⚠ {actionError}</p>}
         {selected ? (
           <RecordingDetail
             item={selected}
@@ -192,6 +238,8 @@ export default function RecentRecordings() {
               ? () => navigate(`/tv?showId=${selected.show_id}`)
               : undefined
             }
+            onTrash={() => void handleTrash(selected)}
+            onMarkNotRecorded={selectedRuleId && selected.program_id ? () => void handleMarkNotRecorded(selected) : undefined}
           />
         ) : (
           <div className="page__empty">

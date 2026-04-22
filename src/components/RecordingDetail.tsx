@@ -5,6 +5,7 @@ import { getServerUrl } from '../api/client';
 export interface RecordingDetailItem {
   id: string;
   show_id?: string;
+  program_id?: string;
   title: string;
   episode_title?: string;
   season_number?: number | null;
@@ -36,6 +37,10 @@ interface RecordingDetailProps {
   backLabel?: string;
   /** If provided, shows the "View all episodes of …" link at the bottom. */
   onNavigateToShow?: () => void;
+  /** Permanently delete the recording file. */
+  onTrash?: () => void;
+  /** Mark the program as not recorded so the DVR can re-record it. */
+  onMarkNotRecorded?: () => void;
 }
 
 function formatDateTime(ms: number) {
@@ -70,6 +75,8 @@ export default function RecordingDetail({
   onBack,
   backLabel = '← Back',
   onNavigateToShow,
+  onTrash,
+  onMarkNotRecorded,
 }: RecordingDetailProps) {
   const thumb = resolveThumb(item);
 
@@ -154,6 +161,31 @@ export default function RecordingDetail({
           <button className="rec-detail__show-link" onClick={onNavigateToShow}>
             View all episodes of {item.title} →
           </button>
+        )}
+
+        {(onMarkNotRecorded || onTrash) && (
+          <div className="rec-detail__actions">
+            {onMarkNotRecorded && (
+              <button
+                className="rec-detail__action-btn rec-detail__action-btn--secondary"
+                onClick={onMarkNotRecorded}
+              >
+                Mark as Not Recorded
+              </button>
+            )}
+            {onTrash && (
+              <button
+                className="rec-detail__action-btn rec-detail__action-btn--danger"
+                onClick={() => {
+                  if (window.confirm(`Send "${item.episode_title ?? item.title}" to trash?`)) {
+                    onTrash();
+                  }
+                }}
+              >
+                Trash
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

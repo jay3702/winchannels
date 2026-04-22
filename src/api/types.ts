@@ -172,6 +172,17 @@ export interface Recording {
   updated_at: number;
 }
 
+// Raw DVR file record returned by /dvr/files/{id}
+export interface DvrFile {
+  ID: string;
+  RuleID: string;   // non-empty when the file was created by a DVR rule/pass
+  GroupID: string;
+  JobID: string;
+  Path: string;
+  CreatedAt: number;
+  Duration: number;
+}
+
 // Query params shared across list endpoints
 export interface ListParams {
   sort?: string;

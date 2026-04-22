@@ -882,6 +882,44 @@
   color: #80c8ff;
 }
 
+.rec-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.rec-detail__action-btn {
+  border-radius: 6px;
+  font-size: 13px;
+  padding: 8px 16px;
+  cursor: pointer;
+  border: 1px solid;
+  transition: background 0.1s, color 0.1s;
+}
+
+.rec-detail__action-btn--secondary {
+  background: #1a3a5c;
+  border-color: #0078d4;
+  color: #60b0f0;
+}
+
+.rec-detail__action-btn--secondary:hover {
+  background: #1e4a72;
+  color: #80c8ff;
+}
+
+.rec-detail__action-btn--danger {
+  background: #3a1a1a;
+  border-color: #c42b2b;
+  color: #f08080;
+}
+
+.rec-detail__action-btn--danger:hover {
+  background: #5a2020;
+  color: #ff9999;
+}
+
 /* ── TV Shows: back button ─────────────────────────────────────────────── */
 
 .tv-back-btn {
