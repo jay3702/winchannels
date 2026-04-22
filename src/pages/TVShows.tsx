@@ -64,7 +64,9 @@ export default function TVShows() {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [selectedEpisode, setSelectedEpisode] = useState<Episode | null>(null);
   const [showSort, setShowSort] = useState<SortMode>('alpha');
+  const [showSortOrder, setShowSortOrder] = useState<'asc' | 'desc'>('asc');
   const [episodeSort, setEpisodeSort] = useState<SortMode>('date');
+  const [episodeSortOrder, setEpisodeSortOrder] = useState<'asc' | 'desc'>('desc');
   const [filter, setFilter] = useState<'all' | 'unwatched'>('all');
   const [loadingShows, setLoadingShows] = useState(true);
   const [loadingEps, setLoadingEps] = useState(false);
@@ -99,11 +101,13 @@ export default function TVShows() {
     const list = [...shows];
     if (showSort === 'alpha') {
       list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+      if (showSortOrder === 'desc') list.reverse();
     } else {
-      list.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
+      list.sort((a, b) => (b.updated_at ?? b.created_at ?? 0) - (a.updated_at ?? a.created_at ?? 0));
+      if (showSortOrder === 'asc') list.reverse();
     }
     return list;
-  }, [shows, showSort]);
+  }, [shows, showSort, showSortOrder]);
 
   const sortedEpisodes = useMemo(() => {
     const list = filter === 'unwatched' ? episodes.filter((ep) => !ep.watched) : [...episodes];
@@ -113,11 +117,13 @@ export default function TVShows() {
         const bk = (b.episode_title || b.title || '').trim();
         return ak.localeCompare(bk, undefined, { sensitivity: 'base' });
       });
+      if (episodeSortOrder === 'desc') list.reverse();
     } else {
-      list.sort((a, b) => b.created_at - a.created_at);
+      list.sort((a, b) => b.updated_at - a.updated_at);
+      if (episodeSortOrder === 'asc') list.reverse();
     }
     return list;
-  }, [episodes, filter, episodeSort]);
+  }, [episodes, filter, episodeSort, episodeSortOrder]);
 
   useEffect(() => {
     setLoadingShows(true);
@@ -240,15 +246,24 @@ export default function TVShows() {
       <aside className="show-list">
         <h2 className="show-list__title">TV Shows</h2>
         <div className="show-list__sort">
-          <select
-            className="page-sort-select"
-            value={showSort}
-            onChange={(e) => setShowSort(e.target.value as SortMode)}
-            aria-label="Sort TV Shows list"
+          <button
+            className={`sort-btn ${showSort === 'alpha' ? 'sort-btn--active' : ''}`}
+            onClick={() => {
+              if (showSort === 'alpha') setShowSortOrder((o) => o === 'asc' ? 'desc' : 'asc');
+              else { setShowSort('alpha'); setShowSortOrder('asc'); }
+            }}
           >
-            <option value="alpha">Alphabetical</option>
-            <option value="date">Date Added</option>
-          </select>
+            A–Z{showSort === 'alpha' ? (showSortOrder === 'asc' ? ' ▲' : ' ▼') : ''}
+          </button>
+          <button
+            className={`sort-btn ${showSort === 'date' ? 'sort-btn--active' : ''}`}
+            onClick={() => {
+              if (showSort === 'date') setShowSortOrder((o) => o === 'desc' ? 'asc' : 'desc');
+              else { setShowSort('date'); setShowSortOrder('desc'); }
+            }}
+          >
+            Date{showSort === 'date' ? (showSortOrder === 'desc' ? ' ▼' : ' ▲') : ''}
+          </button>
         </div>
         {loadingShows && <p className="page__status">Loading…</p>}
         {error && <p className="page__error">⚠ {error}</p>}
@@ -307,15 +322,24 @@ export default function TVShows() {
                 >
                   Unwatched
                 </button>
-                <select
-                  className="page-sort-select"
-                  value={episodeSort}
-                  onChange={(e) => setEpisodeSort(e.target.value as SortMode)}
-                  aria-label="Sort TV episodes grid"
+                <button
+                  className={`sort-btn ${episodeSort === 'alpha' ? 'sort-btn--active' : ''}`}
+                  onClick={() => {
+                    if (episodeSort === 'alpha') setEpisodeSortOrder((o) => o === 'asc' ? 'desc' : 'asc');
+                    else { setEpisodeSort('alpha'); setEpisodeSortOrder('asc'); }
+                  }}
                 >
-                  <option value="alpha">Alphabetical</option>
-                  <option value="date">Date Added</option>
-                </select>
+                  A–Z{episodeSort === 'alpha' ? (episodeSortOrder === 'asc' ? ' ▲' : ' ▼') : ''}
+                </button>
+                <button
+                  className={`sort-btn ${episodeSort === 'date' ? 'sort-btn--active' : ''}`}
+                  onClick={() => {
+                    if (episodeSort === 'date') setEpisodeSortOrder((o) => o === 'desc' ? 'asc' : 'desc');
+                    else { setEpisodeSort('date'); setEpisodeSortOrder('desc'); }
+                  }}
+                >
+                  Date{episodeSort === 'date' ? (episodeSortOrder === 'desc' ? ' ▼' : ' ▲') : ''}
+                </button>
               </div>
             </header>
             {loadingEps && <p className="page__status">Loading episodes…</p>}

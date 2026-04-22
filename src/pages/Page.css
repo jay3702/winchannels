@@ -134,6 +134,29 @@
   font-weight: 600;
 }
 
+.sort-btn {
+  background: #1e1e2e;
+  border: 1px solid #333;
+  color: #aaa;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.sort-btn:hover {
+  border-color: #555;
+  color: #ccc;
+}
+
+.sort-btn--active {
+  background: #1a3a5c;
+  border-color: #0078d4;
+  color: #60b0f0;
+  font-weight: 600;
+}
+
 .page__status {
   padding: 24px;
   color: #888;

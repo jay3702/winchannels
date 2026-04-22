@@ -54,6 +54,7 @@ export default function Movies() {
   const [watchBusyId, setWatchBusyId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unwatched'>('all');
   const [sort, setSort] = useState<SortMode>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
   const apiVersionApproved = useStore((s) => s.apiVersionApproved);
@@ -76,11 +77,13 @@ export default function Movies() {
     const list = [...displayed];
     if (sort === 'alpha') {
       list.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+      if (sortOrder === 'desc') list.reverse();
     } else {
       list.sort((a, b) => b.created_at - a.created_at);
+      if (sortOrder === 'asc') list.reverse();
     }
     return list;
-  }, [displayed, sort]);
+  }, [displayed, sort, sortOrder]);
 
   async function toggleWatched(movie: Movie) {
     if (!apiVersionApproved) {
@@ -128,15 +131,24 @@ export default function Movies() {
           >
             Unwatched
           </button>
-          <select
-            className="page-sort-select"
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortMode)}
-            aria-label="Sort movies grid"
+          <button
+            className={`sort-btn ${sort === 'alpha' ? 'sort-btn--active' : ''}`}
+            onClick={() => {
+              if (sort === 'alpha') setSortOrder((o) => o === 'asc' ? 'desc' : 'asc');
+              else { setSort('alpha'); setSortOrder('asc'); }
+            }}
           >
-            <option value="alpha">Alphabetical</option>
-            <option value="date">Date Added</option>
-          </select>
+            A–Z{sort === 'alpha' ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : ''}
+          </button>
+          <button
+            className={`sort-btn ${sort === 'date' ? 'sort-btn--active' : ''}`}
+            onClick={() => {
+              if (sort === 'date') setSortOrder((o) => o === 'desc' ? 'asc' : 'desc');
+              else { setSort('date'); setSortOrder('desc'); }
+            }}
+          >
+            Date{sort === 'date' ? (sortOrder === 'desc' ? ' ▼' : ' ▲') : ''}
+          </button>
         </div>
       </header>
 

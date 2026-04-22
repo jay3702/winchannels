@@ -14,6 +14,19 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+## v1.2.2 — 2026-04-21
+
+### 2026-04-21 - Sort toggle buttons; Live TV title wrap fix
+
+- Request: replace sort dropdowns with toggle buttons showing sort direction; clicking the active sort reverses it; rename "Date Added" to "Date". Prevent "Live TV" heading from wrapping when source filter buttons overflow.
+- Rationale: toggle buttons are more compact and discoverable; ▲/▼ arrows eliminate ambiguity about sort order. The heading wrap was a cosmetic regression when many sources are configured.
+- Solution:
+  - `TVShows.tsx`: added `showSortOrder` and `episodeSortOrder` state; replaced both `<select>` controls with paired `sort-btn` buttons; sort `useMemo` respects direction.
+  - `Movies.tsx`: same pattern with `sortOrder` state.
+  - `Page.css`: added `.sort-btn` and `.sort-btn--active` rules matching `.filter-btn` family.
+  - `Live.tsx`: added `whiteSpace: nowrap` and `alignSelf: flex-start` to the `<h1>`.
+- Validation: TypeScript diagnostics clean on all modified files.
+
 ## v1.2.1 — 2026-04-21
 
 ### 2026-04-21 - Gate "Mark as Not Recorded" on DVR rule association

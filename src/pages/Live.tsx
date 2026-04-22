@@ -484,7 +484,7 @@ export default function Live() {
   return (
     <div className="page">
       <header className="page__header">
-        <h1 className="page__title">Live TV</h1>
+        <h1 className="page__title" style={{ whiteSpace: 'nowrap', alignSelf: 'flex-start' }}>Live TV</h1>
         <div className="page__filters page__filters--wrap">
           {availableFilters.map((filter) => (
             <button
