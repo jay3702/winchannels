@@ -14,6 +14,14 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-23 - Progressive list auto-fill loop: missing scrollbar when content fits
+
+- Request: user reported no scrollbar in Recent Recordings list despite seeing 5 recordings and "Scroll for more recordings" message.
+- Symptoms: `rec-list__items` had `overflow-y: auto` but no scrollbar; the "Scroll for older recordings…" sentinel was visible, meaning more groups existed, but there was nothing to scroll.
+- Root cause: the scroll `useEffect` depended only on `[groups.length]`. On mount it called `handleScroll()` once, which expanded from 3 → 5 day groups (step = 2). After that one expansion the effect did not re-run, so if the 5 groups' content still fit within the container height without overflowing, the scrollbar never appeared and the user had no way to trigger further expansion.
+- Solution: added the visible-count state variable (`visibleDayGroups`, `visibleChannelCount`, `visibleMovieCount`, `visibleShowCount`) to the scroll effect's dependency array in all four pages. Now each expansion triggers a re-run of the effect which calls `handleScroll()` again, continuing to fill until either overflow exists or all items are shown. The `current >= total` guard already prevents infinite expansion.
+- Validation: TypeScript diagnostics clean for all modified files; pushed as v1.3.3.
+
 ### 2026-04-23 - Fix CI build failure: unused recordings state variable
 
 - Request: CI builds failed on all four platform targets after v1.3.1 push.
