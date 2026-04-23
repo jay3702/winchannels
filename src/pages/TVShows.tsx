@@ -236,7 +236,7 @@ export default function TVShows() {
     handleScroll();
     node.addEventListener('scroll', handleScroll);
     return () => node.removeEventListener('scroll', handleScroll);
-  }, [sortedShows.length]);
+  }, [sortedShows.length, visibleShowCount]);
 
   useEffect(() => {
     if (!selectedShow) return;

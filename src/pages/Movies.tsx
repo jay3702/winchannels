@@ -168,7 +168,7 @@ export default function Movies() {
     handleScroll();
     node.addEventListener('scroll', handleScroll);
     return () => node.removeEventListener('scroll', handleScroll);
-  }, [selectedMovie, sortedDisplayed.length]);
+  }, [selectedMovie, sortedDisplayed.length, visibleMovieCount]);
 
   const displayedMovies = useMemo(() => {
     return sortedDisplayed.slice(0, visibleMovieCount);

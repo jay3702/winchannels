@@ -219,7 +219,7 @@ export default function RecentRecordings() {
     handleScroll();
     node.addEventListener('scroll', handleScroll);
     return () => node.removeEventListener('scroll', handleScroll);
-  }, [groups.length]);
+  }, [groups.length, visibleDayGroups]);
 
   const displayedGroups = groups.slice(0, visibleDayGroups);
 

@@ -544,7 +544,7 @@ export default function Live() {
     handleScroll();
     node.addEventListener('scroll', handleScroll);
     return () => node.removeEventListener('scroll', handleScroll);
-  }, [visibleRows.length]);
+  }, [visibleRows.length, visibleChannelCount]);
 
   useEffect(() => {
     if (!selectedChannelId) return;
