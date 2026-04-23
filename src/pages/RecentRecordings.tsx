@@ -88,7 +88,7 @@ export default function RecentRecordings() {
   const serverChangeVersion = useStore((s: AppState) => s.serverChangeVersion);
   const cacheKey = `${activeServerId}:${serverChangeVersion}`;
   const cachedEntry = recentRecordingsCache.get(cacheKey);
-  const [recordings, setRecordings] = useState<Recording[]>(cachedEntry?.recordings ?? []);
+  const [, setRecordings] = useState<Recording[]>(cachedEntry?.recordings ?? []);
   const [groups, setGroups] = useState<ReturnType<typeof groupByDayTime>>(cachedEntry?.groups ?? []);
   const [channelLogos, setChannelLogos] = useState<Record<string, string>>(cachedEntry?.channelLogos ?? {});
   const [selected, setSelected] = useState<Recording | null>(null);
