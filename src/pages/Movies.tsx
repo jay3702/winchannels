@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { fetchMovies, setMovieWatched } from '../api/recordings';
 import type { Movie } from '../api/types';
@@ -6,7 +6,35 @@ import MediaCard from '../components/MediaCard';
 import { useStore } from '../store/useStore';
 import './Page.css';
 
-type SortMode = 'alpha' | 'date';
+type SortField = 'title' | 'id' | 'date-added' | 'date-updated';
+const INITIAL_VISIBLE_MOVIES = 120;
+const VISIBLE_MOVIES_STEP = 80;
+const MOVIES_SORT_STATE_KEY = 'winchannels_movies_sort_state_v1';
+
+const moviesCache = new Map<string, Movie[]>();
+
+function defaultOrderFor(field: SortField): 'asc' | 'desc' {
+  return field === 'title' ? 'asc' : 'desc';
+}
+
+function loadMoviesSortState(): { sort: SortField; sortOrder: 'asc' | 'desc' } {
+  try {
+    const raw = localStorage.getItem(MOVIES_SORT_STATE_KEY);
+    if (!raw) return { sort: 'date-added', sortOrder: defaultOrderFor('date-added') };
+    const parsed = JSON.parse(raw) as Partial<{ sort: SortField; sortOrder: 'asc' | 'desc' }>;
+    const sort = parsed.sort === 'title' || parsed.sort === 'id' || parsed.sort === 'date-added' || parsed.sort === 'date-updated'
+      ? parsed.sort
+      : 'date-added';
+    return {
+      sort,
+      sortOrder: parsed.sortOrder === 'asc' || parsed.sortOrder === 'desc'
+        ? parsed.sortOrder
+        : defaultOrderFor(sort),
+    };
+  } catch {
+    return { sort: 'date-added', sortOrder: defaultOrderFor('date-added') };
+  }
+}
 
 function labelKey(key: string): string {
   return key
@@ -47,27 +75,47 @@ function movieBadges(movie: Movie): { label: string; type: 'default' | 'favorite
 }
 
 export default function Movies() {
-  const [movies, setMovies] = useState<Movie[]>([]);
+  const initialSortState = loadMoviesSortState();
+  const activeServerId = useStore((s) => s.activeServerId);
+  const cacheKey = activeServerId;
+  const cachedMovies = moviesCache.get(cacheKey);
+  const [movies, setMovies] = useState<Movie[]>(cachedMovies ?? []);
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedMovies);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [watchBusyId, setWatchBusyId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unwatched'>('all');
-  const [sort, setSort] = useState<SortMode>('date');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sort, setSort] = useState<SortField>(initialSortState.sort);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(initialSortState.sortOrder);
+  const [visibleMovieCount, setVisibleMovieCount] = useState(INITIAL_VISIBLE_MOVIES);
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
   const apiVersionApproved = useStore((s) => s.apiVersionApproved);
   const [searchParams] = useSearchParams();
   const requestedMovieId = searchParams.get('movieId');
+  const pageRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setLoading(true);
+    localStorage.setItem(MOVIES_SORT_STATE_KEY, JSON.stringify({ sort, sortOrder }));
+  }, [sort, sortOrder]);
+
+  useEffect(() => {
+    const cached = moviesCache.get(cacheKey);
+    setLoading(!cached);
     setError(null);
     setActionError(null);
+    if (cached) {
+      setMovies(cached);
+      setSelectedMovie((prev) => {
+        if (requestedMovieId) return cached.find((m) => m.id === requestedMovieId) ?? null;
+        return prev ? cached.find((m) => m.id === prev.id) ?? prev : null;
+      });
+    }
+
     fetchMovies({ sort: 'date_added', order: 'desc' })
       .then((loaded) => {
+        moviesCache.set(cacheKey, loaded);
         setMovies(loaded);
         setSelectedMovie((prev) => {
           if (requestedMovieId) return loaded.find((m) => m.id === requestedMovieId) ?? null;
@@ -76,20 +124,55 @@ export default function Movies() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [requestedMovieId, serverChangeVersion]);
+  }, [cacheKey, requestedMovieId, serverChangeVersion]);
 
   const displayed = filter === 'unwatched' ? movies.filter((m) => !m.watched) : movies;
   const sortedDisplayed = useMemo(() => {
     const list = [...displayed];
-    if (sort === 'alpha') {
-      list.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
-      if (sortOrder === 'desc') list.reverse();
-    } else {
-      list.sort((a, b) => b.created_at - a.created_at);
-      if (sortOrder === 'asc') list.reverse();
+    switch (sort) {
+      case 'title':
+        list.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+        break;
+      case 'id':
+        list.sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: 'base' }));
+        break;
+      case 'date-added':
+        list.sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0));
+        break;
+      case 'date-updated':
+        list.sort((a, b) => (a.updated_at ?? 0) - (b.updated_at ?? 0));
+        break;
     }
+    if (sortOrder === 'desc') list.reverse();
     return list;
   }, [displayed, sort, sortOrder]);
+
+  useEffect(() => {
+    setVisibleMovieCount(INITIAL_VISIBLE_MOVIES);
+  }, [filter, sort, sortOrder, sortedDisplayed.length]);
+
+  useEffect(() => {
+    if (selectedMovie) return;
+    const node = pageRef.current;
+    if (!node) return;
+
+    const handleScroll = () => {
+      const remaining = node.scrollHeight - node.scrollTop - node.clientHeight;
+      if (remaining > 260) return;
+      setVisibleMovieCount((current) => {
+        if (current >= sortedDisplayed.length) return current;
+        return Math.min(current + VISIBLE_MOVIES_STEP, sortedDisplayed.length);
+      });
+    };
+
+    handleScroll();
+    node.addEventListener('scroll', handleScroll);
+    return () => node.removeEventListener('scroll', handleScroll);
+  }, [selectedMovie, sortedDisplayed.length]);
+
+  const displayedMovies = useMemo(() => {
+    return sortedDisplayed.slice(0, visibleMovieCount);
+  }, [sortedDisplayed, visibleMovieCount]);
 
   async function toggleWatched(movie: Movie) {
     if (!apiVersionApproved) {
@@ -121,7 +204,7 @@ export default function Movies() {
   }
 
   return (
-    <div className="page">
+    <div className="page" ref={pageRef}>
       <header className="page__header">
         <h1 className="page__title">Movies</h1>
         <div className="page__filters">
@@ -137,24 +220,41 @@ export default function Movies() {
           >
             Unwatched
           </button>
-          <button
-            className={`sort-btn ${sort === 'alpha' ? 'sort-btn--active' : ''}`}
-            onClick={() => {
-              if (sort === 'alpha') setSortOrder((o) => o === 'asc' ? 'desc' : 'asc');
-              else { setSort('alpha'); setSortOrder('asc'); }
+          <select
+            className="page-sort-select"
+            value={sort}
+            onChange={(e) => {
+              const next = e.target.value as SortField;
+              setSort(next);
+              setSortOrder(defaultOrderFor(next));
             }}
+            aria-label="Sort movies"
           >
-            A–Z{sort === 'alpha' ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : ''}
-          </button>
-          <button
-            className={`sort-btn ${sort === 'date' ? 'sort-btn--active' : ''}`}
-            onClick={() => {
-              if (sort === 'date') setSortOrder((o) => o === 'desc' ? 'asc' : 'desc');
-              else { setSort('date'); setSortOrder('desc'); }
-            }}
-          >
-            Date{sort === 'date' ? (sortOrder === 'desc' ? ' ▼' : ' ▲') : ''}
-          </button>
+            <option value="title">Title</option>
+            <option value="id">ID</option>
+            <option value="date-added">Date Added</option>
+            <option value="date-updated">Date Updated</option>
+          </select>
+          <div className="page-sort-order-stack" role="group" aria-label="Movie sort direction">
+            <button
+              type="button"
+              className={`page-sort-order-btn page-sort-order-btn--up ${sortOrder === 'asc' ? 'page-sort-order-btn--active' : ''}`}
+              onClick={() => setSortOrder('asc')}
+              aria-label="Sort movies ascending"
+              title="Ascending"
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              className={`page-sort-order-btn page-sort-order-btn--down ${sortOrder === 'desc' ? 'page-sort-order-btn--active' : ''}`}
+              onClick={() => setSortOrder('desc')}
+              aria-label="Sort movies descending"
+              title="Descending"
+            >
+              ▼
+            </button>
+          </div>
         </div>
       </header>
 
@@ -213,7 +313,7 @@ export default function Movies() {
 
           {!selectedMovie && (
             <div className="media-grid">
-              {sortedDisplayed.map((movie) => (
+              {displayedMovies.map((movie) => (
                 <MediaCard
                   key={movie.id}
                   id={movie.id}
@@ -241,6 +341,9 @@ export default function Movies() {
                 />
               ))}
               {sortedDisplayed.length === 0 && <p className="page__status">No movies found.</p>}
+              {displayedMovies.length < sortedDisplayed.length && (
+                <p className="page__status">Scroll for more movies…</p>
+              )}
             </div>
           )}
         </>

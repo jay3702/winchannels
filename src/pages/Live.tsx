@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchChannels } from '../api/recordings';
 import request, { getServerUrl } from '../api/client';
 import type { Channel } from '../api/types';
@@ -32,7 +32,35 @@ type GuideChannel = {
   Favorite?: boolean;
   Hidden?: boolean;
 };
+
+interface LiveCacheEntry {
+  channels: Channel[];
+  guideFavorites: string[];
+  guideHidden: string[];
+}
+
+const liveCache = new Map<string, LiveCacheEntry>();
+
 const TEXT = new Intl.Collator(undefined, { sensitivity: 'base' });
+const INITIAL_VISIBLE_CHANNEL_ROWS = 120;
+const VISIBLE_CHANNEL_ROWS_STEP = 80;
+const LIVE_SORT_STATE_KEY = 'winchannels_live_sort_state_v1';
+
+function loadLiveSortState(): { sortMode: SortMode; diagnosticsSortMode: DiagnosticsSortMode } {
+  try {
+    const raw = localStorage.getItem(LIVE_SORT_STATE_KEY);
+    if (!raw) return { sortMode: 'number', diagnosticsSortMode: 'number' };
+    const parsed = JSON.parse(raw) as Partial<{ sortMode: SortMode; diagnosticsSortMode: DiagnosticsSortMode }>;
+    return {
+      sortMode: parsed.sortMode === 'alpha' || parsed.sortMode === 'number' ? parsed.sortMode : 'number',
+      diagnosticsSortMode: parsed.diagnosticsSortMode === 'name' || parsed.diagnosticsSortMode === 'number'
+        ? parsed.diagnosticsSortMode
+        : 'number',
+    };
+  } catch {
+    return { sortMode: 'number', diagnosticsSortMode: 'number' };
+  }
+}
 
 function channelNumberValue(numberText: string | undefined): number {
   const parsed = Number.parseFloat(numberText ?? '');
@@ -264,36 +292,60 @@ async function resolveLiveManifestUrl(channel: Channel): Promise<string> {
 }
 
 export default function Live() {
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [guideFavorites, setGuideFavorites] = useState<Set<string>>(new Set());
-  const [guideHidden, setGuideHidden] = useState<Set<string>>(new Set());
-  const [sortMode, setSortMode] = useState<SortMode>('number');
-  const [diagnosticsSortMode, setDiagnosticsSortMode] = useState<DiagnosticsSortMode>('number');
+  const initialSortState = loadLiveSortState();
+  const activeServerId = useStore((s) => s.activeServerId);
+  const cacheKey = activeServerId;
+  const cached = liveCache.get(cacheKey);
+  const [channels, setChannels] = useState<Channel[]>(cached?.channels ?? []);
+  const [guideFavorites, setGuideFavorites] = useState<Set<string>>(new Set(cached?.guideFavorites ?? []));
+  const [guideHidden, setGuideHidden] = useState<Set<string>>(new Set(cached?.guideHidden ?? []));
+  const [sortMode, setSortMode] = useState<SortMode>(initialSortState.sortMode);
+  const [diagnosticsSortMode, setDiagnosticsSortMode] = useState<DiagnosticsSortMode>(initialSortState.diagnosticsSortMode);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [playPendingRowId, setPlayPendingRowId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [visibleChannelCount, setVisibleChannelCount] = useState(INITIAL_VISIBLE_CHANNEL_ROWS);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<string | null>(null);
+  const liveListRef = useRef<HTMLUListElement | null>(null);
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
   const diagnosticsEnabled = useStore((s) => s.diagnosticsEnabled);
   const showHiddenLiveChannels = useStore((s) => s.showHiddenLiveChannels);
 
   useEffect(() => {
+    localStorage.setItem(LIVE_SORT_STATE_KEY, JSON.stringify({ sortMode, diagnosticsSortMode }));
+  }, [sortMode, diagnosticsSortMode]);
+
+  useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const cachedRows = liveCache.get(cacheKey);
+    setLoading(!cachedRows);
     setError(null);
     setSelectedChannelId(null);
+    if (cachedRows) {
+      setChannels(cachedRows.channels);
+      setGuideFavorites(new Set(cachedRows.guideFavorites));
+      setGuideHidden(new Set(cachedRows.guideHidden));
+    }
+
     Promise.all([
       fetchChannels(),
       request<Record<string, unknown>>('/dvr/guide/channels').catch(() => ({})),
     ])
       .then(([loadedChannels, loadedGuide]) => {
         if (cancelled) return;
+        const nextFavorites = Array.from(parseGuideFavorites(loadedGuide));
+        const nextHidden = Array.from(parseGuideHidden(loadedGuide));
+        liveCache.set(cacheKey, {
+          channels: loadedChannels,
+          guideFavorites: nextFavorites,
+          guideHidden: nextHidden,
+        });
         setChannels(loadedChannels);
-        setGuideFavorites(parseGuideFavorites(loadedGuide));
-        setGuideHidden(parseGuideHidden(loadedGuide));
+        setGuideFavorites(new Set(nextFavorites));
+        setGuideHidden(new Set(nextHidden));
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -301,7 +353,7 @@ export default function Live() {
     return () => {
       cancelled = true;
     };
-  }, [serverChangeVersion]);
+  }, [cacheKey, serverChangeVersion]);
 
   const rows = useMemo<ChannelRow[]>(() => {
     const seen = new Map<string, number>();
@@ -473,6 +525,39 @@ export default function Live() {
   }, [rows, filterMode, sortMode, guideFavorites]);
 
   useEffect(() => {
+    setVisibleChannelCount(INITIAL_VISIBLE_CHANNEL_ROWS);
+  }, [filterMode, sortMode, visibleRows.length]);
+
+  useEffect(() => {
+    const node = liveListRef.current;
+    if (!node) return;
+
+    const handleScroll = () => {
+      const remaining = node.scrollHeight - node.scrollTop - node.clientHeight;
+      if (remaining > 220) return;
+      setVisibleChannelCount((current) => {
+        if (current >= visibleRows.length) return current;
+        return Math.min(current + VISIBLE_CHANNEL_ROWS_STEP, visibleRows.length);
+      });
+    };
+
+    handleScroll();
+    node.addEventListener('scroll', handleScroll);
+    return () => node.removeEventListener('scroll', handleScroll);
+  }, [visibleRows.length]);
+
+  useEffect(() => {
+    if (!selectedChannelId) return;
+    const index = visibleRows.findIndex((row) => row.id === selectedChannelId);
+    if (index < 0 || index < visibleChannelCount) return;
+    setVisibleChannelCount(index + 1);
+  }, [selectedChannelId, visibleRows, visibleChannelCount]);
+
+  const displayedRows = useMemo(() => {
+    return visibleRows.slice(0, visibleChannelCount);
+  }, [visibleRows, visibleChannelCount]);
+
+  useEffect(() => {
     if (selectedChannelId && !visibleRows.some((row) => row.id === selectedChannelId)) {
       setSelectedChannelId(visibleRows[0]?.id ?? null);
     }
@@ -525,8 +610,8 @@ export default function Live() {
       {error && <p className="page__error">⚠ {error}</p>}
 
       {!loading && !error && (
-        <ul className="show-list__items live-list">
-          {visibleRows.map((row) => (
+        <ul className="show-list__items live-list" ref={liveListRef}>
+          {displayedRows.map((row) => (
             <li key={row.id}>
               <button
                 type="button"
@@ -566,6 +651,11 @@ export default function Live() {
           {visibleRows.length === 0 && (
             <li>
               <p className="page__status">No channels for the selected filter.</p>
+            </li>
+          )}
+          {displayedRows.length < visibleRows.length && (
+            <li>
+              <p className="page__status">Scroll for more channels…</p>
             </li>
           )}
         </ul>

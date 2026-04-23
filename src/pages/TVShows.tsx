@@ -1,13 +1,69 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { fetchShows, fetchEpisodesForShow, setEpisodeWatched, trashRecording, markAsNotRecorded, fetchDvrFile } from '../api/recordings';
 import type { Show, Episode } from '../api/types';
 import MediaCard from '../components/MediaCard';
 import RecordingDetail from '../components/RecordingDetail';
+import { useResizableSidebar } from '../lib/useResizableSidebar';
 import { useStore } from '../store/useStore';
 import './Page.css';
 
-type SortMode = 'alpha' | 'date';
+type SortField = 'title' | 'id' | 'date-added' | 'date-updated';
+const INITIAL_VISIBLE_SHOWS = 90;
+const VISIBLE_SHOWS_STEP = 60;
+const TV_SHOWS_SORT_STATE_KEY = 'winchannels_tvshows_sort_state_v1';
+
+const tvShowsCache = new Map<string, Show[]>();
+
+function defaultOrderFor(field: SortField): 'asc' | 'desc' {
+  return field === 'title' ? 'asc' : 'desc';
+}
+
+function loadTvShowsSortState(): {
+  showSort: SortField;
+  showSortOrder: 'asc' | 'desc';
+  episodeSort: SortField;
+  episodeSortOrder: 'asc' | 'desc';
+} {
+  try {
+    const raw = localStorage.getItem(TV_SHOWS_SORT_STATE_KEY);
+    if (!raw) {
+      return {
+        showSort: 'title',
+        showSortOrder: defaultOrderFor('title'),
+        episodeSort: 'date-added',
+        episodeSortOrder: defaultOrderFor('date-added'),
+      };
+    }
+    const parsed = JSON.parse(raw) as Partial<{
+      showSort: SortField;
+      showSortOrder: 'asc' | 'desc';
+      episodeSort: SortField;
+      episodeSortOrder: 'asc' | 'desc';
+    }>;
+    const isField = (value: unknown): value is SortField =>
+      value === 'title' || value === 'id' || value === 'date-added' || value === 'date-updated';
+    const showSort = isField(parsed.showSort) ? parsed.showSort : 'title';
+    const episodeSort = isField(parsed.episodeSort) ? parsed.episodeSort : 'date-added';
+    return {
+      showSort,
+      showSortOrder: parsed.showSortOrder === 'asc' || parsed.showSortOrder === 'desc'
+        ? parsed.showSortOrder
+        : defaultOrderFor(showSort),
+      episodeSort,
+      episodeSortOrder: parsed.episodeSortOrder === 'asc' || parsed.episodeSortOrder === 'desc'
+        ? parsed.episodeSortOrder
+        : defaultOrderFor(episodeSort),
+    };
+  } catch {
+    return {
+      showSort: 'title',
+      showSortOrder: defaultOrderFor('title'),
+      episodeSort: 'date-added',
+      episodeSortOrder: defaultOrderFor('date-added'),
+    };
+  }
+}
 
 function showIconUrl(show: Show): string | undefined {
   const raw = (
@@ -59,27 +115,45 @@ function epBadges(ep: Episode): { label: string; type: 'default' | 'favorite' | 
 }
 
 export default function TVShows() {
-  const [shows, setShows] = useState<Show[]>([]);
+  const initialSortState = loadTvShowsSortState();
+  const activeServerId = useStore((s) => s.activeServerId);
+  const cacheKey = activeServerId;
+  const cachedShows = tvShowsCache.get(cacheKey);
+  const [shows, setShows] = useState<Show[]>(cachedShows ?? []);
   const [selectedShow, setSelectedShow] = useState<Show | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [selectedEpisode, setSelectedEpisode] = useState<Episode | null>(null);
-  const [showSort, setShowSort] = useState<SortMode>('alpha');
-  const [showSortOrder, setShowSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [episodeSort, setEpisodeSort] = useState<SortMode>('date');
-  const [episodeSortOrder, setEpisodeSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [showSort, setShowSort] = useState<SortField>(initialSortState.showSort);
+  const [showSortOrder, setShowSortOrder] = useState<'asc' | 'desc'>(initialSortState.showSortOrder);
+  const [episodeSort, setEpisodeSort] = useState<SortField>(initialSortState.episodeSort);
+  const [episodeSortOrder, setEpisodeSortOrder] = useState<'asc' | 'desc'>(initialSortState.episodeSortOrder);
   const [filter, setFilter] = useState<'all' | 'unwatched'>('all');
-  const [loadingShows, setLoadingShows] = useState(true);
+  const [loadingShows, setLoadingShows] = useState(!cachedShows);
   const [loadingEps, setLoadingEps] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [epError, setEpError] = useState<string | null>(null);
   const [watchBusyId, setWatchBusyId] = useState<string | null>(null);
   const [selectedEpisodeRuleId, setSelectedEpisodeRuleId] = useState<string | null>(null);
+  const [visibleShowCount, setVisibleShowCount] = useState(INITIAL_VISIBLE_SHOWS);
   const [searchParams, setSearchParams] = useSearchParams();
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
   const apiVersionApproved = useStore((s) => s.apiVersionApproved);
+  const { width: sidebarWidth, isResizing, handleMouseDown } = useResizableSidebar({
+    initialWidth: 220,
+    minWidth: 180,
+    maxWidth: 520,
+  });
   const requestedShowId = searchParams.get('showId');
   const requestedEpisodeId = searchParams.get('episodeId');
+  const showListRef = useRef<HTMLUListElement | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem(
+      TV_SHOWS_SORT_STATE_KEY,
+      JSON.stringify({ showSort, showSortOrder, episodeSort, episodeSortOrder }),
+    );
+  }, [showSort, showSortOrder, episodeSort, episodeSortOrder]);
 
   useEffect(() => {
     const rawFilter = searchParams.get('filter');
@@ -100,41 +174,96 @@ export default function TVShows() {
 
   const sortedShows = useMemo(() => {
     const list = [...shows];
-    if (showSort === 'alpha') {
-      list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-      if (showSortOrder === 'desc') list.reverse();
-    } else {
-      list.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
-      if (showSortOrder === 'asc') list.reverse();
+    switch (showSort) {
+      case 'title':
+        list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        break;
+      case 'id':
+        list.sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: 'base' }));
+        break;
+      case 'date-added':
+        list.sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0));
+        break;
+      case 'date-updated':
+        list.sort((a, b) => (a.updated_at ?? 0) - (b.updated_at ?? 0));
+        break;
     }
+    if (showSortOrder === 'desc') list.reverse();
     return list;
   }, [shows, showSort, showSortOrder]);
 
   const sortedEpisodes = useMemo(() => {
     const list = filter === 'unwatched' ? episodes.filter((ep) => !ep.watched) : [...episodes];
-    if (episodeSort === 'alpha') {
-      list.sort((a, b) => {
-        const ak = (a.episode_title || a.title || '').trim();
-        const bk = (b.episode_title || b.title || '').trim();
-        return ak.localeCompare(bk, undefined, { sensitivity: 'base' });
-      });
-      if (episodeSortOrder === 'desc') list.reverse();
-    } else {
-      list.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
-      if (episodeSortOrder === 'asc') list.reverse();
+    switch (episodeSort) {
+      case 'title':
+        list.sort((a, b) => {
+          const ak = (a.episode_title || a.title || '').trim();
+          const bk = (b.episode_title || b.title || '').trim();
+          return ak.localeCompare(bk, undefined, { sensitivity: 'base' });
+        });
+        break;
+      case 'id':
+        list.sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: 'base' }));
+        break;
+      case 'date-added':
+        list.sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0));
+        break;
+      case 'date-updated':
+        list.sort((a, b) => (a.updated_at ?? 0) - (b.updated_at ?? 0));
+        break;
     }
+    if (episodeSortOrder === 'desc') list.reverse();
     return list;
   }, [episodes, filter, episodeSort, episodeSortOrder]);
 
   useEffect(() => {
-    setLoadingShows(true);
+    setVisibleShowCount(INITIAL_VISIBLE_SHOWS);
+  }, [showSort, showSortOrder, sortedShows.length]);
+
+  useEffect(() => {
+    const node = showListRef.current;
+    if (!node) return;
+
+    const handleScroll = () => {
+      const remaining = node.scrollHeight - node.scrollTop - node.clientHeight;
+      if (remaining > 220) return;
+      setVisibleShowCount((current) => {
+        if (current >= sortedShows.length) return current;
+        return Math.min(current + VISIBLE_SHOWS_STEP, sortedShows.length);
+      });
+    };
+
+    handleScroll();
+    node.addEventListener('scroll', handleScroll);
+    return () => node.removeEventListener('scroll', handleScroll);
+  }, [sortedShows.length]);
+
+  useEffect(() => {
+    if (!selectedShow) return;
+    const index = sortedShows.findIndex((show) => show.id === selectedShow.id);
+    if (index < 0 || index < visibleShowCount) return;
+    setVisibleShowCount(index + 1);
+  }, [selectedShow, sortedShows, visibleShowCount]);
+
+  const displayedShows = useMemo(() => {
+    return sortedShows.slice(0, visibleShowCount);
+  }, [sortedShows, visibleShowCount]);
+
+  useEffect(() => {
+    const cached = tvShowsCache.get(cacheKey);
+    setLoadingShows(!cached);
     setError(null);
     setEpError(null);
     setSelectedShow(null);
     setEpisodes([]);
     setSelectedEpisode(null);
+    if (cached) {
+      setShows(cached);
+    }
+
     fetchShows()
       .then((loaded) => {
+        tvShowsCache.set(cacheKey, loaded);
         setShows(loaded);
         if (requestedShowId) {
           const match = loaded.find((s) => s.id === requestedShowId);
@@ -143,7 +272,7 @@ export default function TVShows() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoadingShows(false));
-  }, [requestedEpisodeId, requestedShowId, serverChangeVersion]);
+  }, [cacheKey, requestedEpisodeId, requestedShowId, serverChangeVersion]);
 
   function selectShow(show: Show, preferredEpisodeId?: string) {
     console.log('[selectShow] called with:', show);
@@ -249,34 +378,53 @@ export default function TVShows() {
   }
 
   return (
-    <div className="page page--split">
+    <div className={`page page--split ${isResizing ? 'resizing' : ''}`}>
       {/* Show list */}
-      <aside className="show-list">
+      <aside className="show-list" style={{ width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }}>
         <h2 className="show-list__title">TV Shows</h2>
         <div className="show-list__sort">
-          <button
-            className={`sort-btn ${showSort === 'alpha' ? 'sort-btn--active' : ''}`}
-            onClick={() => {
-              if (showSort === 'alpha') setShowSortOrder((o) => o === 'asc' ? 'desc' : 'asc');
-              else { setShowSort('alpha'); setShowSortOrder('asc'); }
+          <select
+            className="page-sort-select"
+            value={showSort}
+            onChange={(e) => {
+              const next = e.target.value as SortField;
+              setShowSort(next);
+              setShowSortOrder(defaultOrderFor(next));
             }}
+            aria-label="Sort TV show list"
           >
-            A–Z{showSort === 'alpha' ? (showSortOrder === 'asc' ? ' ▲' : ' ▼') : ''}
-          </button>
-          <button
-            className={`sort-btn ${showSort === 'date' ? 'sort-btn--active' : ''}`}
-            onClick={() => {
-              if (showSort === 'date') setShowSortOrder((o) => o === 'desc' ? 'asc' : 'desc');
-              else { setShowSort('date'); setShowSortOrder('desc'); }
-            }}
-          >
-            Date{showSort === 'date' ? (showSortOrder === 'desc' ? ' ▼' : ' ▲') : ''}
-          </button>
+            <option value="title">Title</option>
+            <option value="id">ID</option>
+            <option value="date-added">Date Added</option>
+            <option value="date-updated">Date Updated</option>
+          </select>
+          <div className="page-sort-order-stack" role="group" aria-label="TV show list sort direction">
+            <button
+              type="button"
+              className={`page-sort-order-btn page-sort-order-btn--up ${showSortOrder === 'asc' ? 'page-sort-order-btn--active' : ''}`}
+              onClick={() => setShowSortOrder('asc')}
+              aria-pressed={showSortOrder === 'asc'}
+              aria-label="Sort TV show list ascending"
+              title="Ascending"
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              className={`page-sort-order-btn page-sort-order-btn--down ${showSortOrder === 'desc' ? 'page-sort-order-btn--active' : ''}`}
+              onClick={() => setShowSortOrder('desc')}
+              aria-pressed={showSortOrder === 'desc'}
+              aria-label="Sort TV show list descending"
+              title="Descending"
+            >
+              ▼
+            </button>
+          </div>
         </div>
         {loadingShows && <p className="page__status">Loading…</p>}
         {error && <p className="page__error">⚠ {error}</p>}
-        <ul className="show-list__items">
-          {sortedShows.map((show) => (
+        <ul className="show-list__items" ref={showListRef}>
+          {displayedShows.map((show) => (
             <li key={show.id}>
               <button
                 className={`show-item ${selectedShow?.id === show.id ? 'show-item--active' : ''}`}
@@ -294,8 +442,18 @@ export default function TVShows() {
               </button>
             </li>
           ))}
+          {displayedShows.length < sortedShows.length && (
+            <li>
+              <p className="page__status">Scroll for more shows…</p>
+            </li>
+          )}
         </ul>
       </aside>
+
+      <div
+        className={`resize-handle ${isResizing ? 'resize-handle--active' : ''}`}
+        onMouseDown={handleMouseDown}
+      />
 
       {/* Main content */}
       <div className="page__content">
@@ -330,24 +488,43 @@ export default function TVShows() {
                 >
                   Unwatched
                 </button>
-                <button
-                  className={`sort-btn ${episodeSort === 'alpha' ? 'sort-btn--active' : ''}`}
-                  onClick={() => {
-                    if (episodeSort === 'alpha') setEpisodeSortOrder((o) => o === 'asc' ? 'desc' : 'asc');
-                    else { setEpisodeSort('alpha'); setEpisodeSortOrder('asc'); }
+                <select
+                  className="page-sort-select"
+                  value={episodeSort}
+                  onChange={(e) => {
+                    const next = e.target.value as SortField;
+                    setEpisodeSort(next);
+                    setEpisodeSortOrder(defaultOrderFor(next));
                   }}
+                  aria-label="Sort episodes"
                 >
-                  A–Z{episodeSort === 'alpha' ? (episodeSortOrder === 'asc' ? ' ▲' : ' ▼') : ''}
-                </button>
-                <button
-                  className={`sort-btn ${episodeSort === 'date' ? 'sort-btn--active' : ''}`}
-                  onClick={() => {
-                    if (episodeSort === 'date') setEpisodeSortOrder((o) => o === 'desc' ? 'asc' : 'desc');
-                    else { setEpisodeSort('date'); setEpisodeSortOrder('desc'); }
-                  }}
-                >
-                  Date{episodeSort === 'date' ? (episodeSortOrder === 'desc' ? ' ▼' : ' ▲') : ''}
-                </button>
+                  <option value="title">Title</option>
+                  <option value="id">ID</option>
+                  <option value="date-added">Date Added</option>
+                  <option value="date-updated">Date Updated</option>
+                </select>
+                <div className="page-sort-order-stack" role="group" aria-label="Episode sort direction">
+                  <button
+                    type="button"
+                    className={`page-sort-order-btn page-sort-order-btn--up ${episodeSortOrder === 'asc' ? 'page-sort-order-btn--active' : ''}`}
+                    onClick={() => setEpisodeSortOrder('asc')}
+                    aria-pressed={episodeSortOrder === 'asc'}
+                    aria-label="Sort episodes ascending"
+                    title="Ascending"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    type="button"
+                    className={`page-sort-order-btn page-sort-order-btn--down ${episodeSortOrder === 'desc' ? 'page-sort-order-btn--active' : ''}`}
+                    onClick={() => setEpisodeSortOrder('desc')}
+                    aria-pressed={episodeSortOrder === 'desc'}
+                    aria-label="Sort episodes descending"
+                    title="Descending"
+                  >
+                    ▼
+                  </button>
+                </div>
               </div>
             </header>
             {loadingEps && <p className="page__status">Loading episodes…</p>}

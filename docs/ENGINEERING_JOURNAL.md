@@ -14,6 +14,128 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-23 - Recent Recordings cache with background refresh
+
+- Request: avoid blocking every time Recent Recordings is revisited by caching the last loaded list, then refreshing in the background and updating only when new items or feed changes are detected.
+- Symptoms discovered:
+  - Recent Recordings remounted on route changes and always re-ran the initial fetch before showing content.
+  - The list felt blocking even when the user had just visited it moments earlier.
+  - Initial cache hydration done in `useEffect` still delayed visible rendering until after mount, so the page could appear blank before the cached list appeared.
+- Solution:
+  - `RecentRecordings.tsx`: added a per-server in-memory cache keyed by active server and server-change version.
+  - Cached recordings and channel logos now initialize component state synchronously during the first render, so revisiting the page paints immediately from cache.
+  - A background refresh still runs on every visit; it updates the visible list only if newer recordings are present or the feed order/content changed.
+  - Trash actions now update the cache immediately so revisiting the page does not re-show deleted items.
+  - To reduce mount cost, the page now renders only about three day groups initially and appends older groups as the user scrolls near the bottom.
+- Validation:
+  - TypeScript diagnostics clean for modified file.
+
+### 2026-04-23 - Progressive list rendering for Live, TV Shows, and Movies
+
+- Request: apply the same quick-initial-render behavior to Live, TV Shows, and Movies lists.
+- Rationale: reduce mount-time DOM cost for large lists by rendering an initial slice, then appending older items during scroll.
+- Solution:
+  - `Live.tsx`: render an initial subset of filtered/sorted channel rows and append more near list bottom.
+  - `TVShows.tsx`: render an initial subset of sorted shows in the sidebar and append more on scroll; keep selected/deep-linked show visible by expanding the slice when needed.
+  - `Movies.tsx`: render an initial subset of movie cards in list view and append more as the page scroll nears the bottom.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+
+### 2026-04-23 - Cache-first route revisit rendering for Live, TV Shows, and Movies
+
+- Request: remove perceptible delay when navigating back to Live, TV Shows, and Movies (especially on higher-latency remote server connections).
+- Symptoms discovered:
+  - each page still waited on fresh network responses before list rendering, unlike Recent Recordings.
+  - delay was much more visible when using the Hawaii server.
+- Solution:
+  - `Live.tsx`, `TVShows.tsx`, `Movies.tsx`: added per-server in-memory caches and cache-first state initialization so the previous list paints immediately on revisit.
+  - Each page still performs a background refresh and updates the visible list when fresh data arrives.
+  - Existing progressive list slicing remains in place to reduce mount-time DOM work.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+
+### 2026-04-23 - Persisted sort selections with field-based default direction
+
+- Request: persist sort selections across sessions and use default direction rules: ascending for alphabetical sorts; descending for ID and date sorts.
+- Solution:
+  - `Live.tsx`: persisted live list and diagnostics sort mode selections.
+  - `TVShows.tsx`, `Movies.tsx`, `Library.tsx`: persisted sort field + direction selections via localStorage.
+  - Sort field changes now reset direction using field defaults (`title` → ascending, `id`/`date-*` → descending), while still allowing user override via arrow controls.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+
+### 2026-04-23 - Preserve Search criteria across server switches
+
+- Request: keep search criteria/results when switching servers.
+- Solution:
+  - `Search.tsx`: removed server-switch clearing logic so `keyword` and `submittedKeyword` persist across server changes.
+  - Existing behavior remains: users can clear manually via the clear action.
+- Validation:
+  - TypeScript diagnostics clean for modified file.
+
+### 2026-04-23 - Resizable split lists and non-jumping divider drag
+
+- Request: keep the default sort direction visibly selected on first render and make split-view list columns resizable like Recent Recordings, without the drag-jump quirk.
+- Symptoms discovered:
+  - Recent Recordings resize used absolute mouse X for width, which caused the divider to jump when the drag started away from the exact sidebar edge.
+  - TV Shows and Library split views had fixed-width list panes.
+- Solution:
+  - Added `useResizableSidebar` to compute width from drag delta (`startWidth + currentX - startX`) so resizing tracks smoothly from the initial click point.
+  - `RecentRecordings.tsx`: switched to the shared resize hook, removing the divider jump.
+  - `TVShows.tsx` and `Library.tsx`: added the same resizable sidebar behavior and splitter handle used by Recent Recordings.
+  - Added `aria-pressed` on active sort direction buttons so the default sort direction is explicitly marked active from initial render.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+
+### 2026-04-23 - Sort direction switched to stacked up/down triangle buttons
+
+- Request: replace the single direction toggle with two vertically stacked triangle buttons (up and down).
+- Rationale: explicit direction controls are faster to scan and avoid ambiguous toggle state.
+- Solution:
+  - `TVShows.tsx`, `Movies.tsx`, `Library.tsx`: replaced each single sort-order toggle with a two-button stack that sets `asc` and `desc` directly.
+  - `Page.css`: added `.page-sort-order-stack` plus button variants/active styling for compact stacked triangle controls.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+
+### 2026-04-23 - Added Date Updated and separate sort direction toggle
+
+- Request: add `Date Updated` to sort options and use a separate asc/desc control next to each sort dropdown instead of encoding direction in dropdown choices.
+- Rationale: cleaner sort model and easier direction changes without reopening the field menu.
+- Solution:
+  - `TVShows.tsx`, `Movies.tsx`, `Library.tsx`: sort dropdowns now select field only (`Title`, `ID`, `Date Added`, `Date Updated`) and a dedicated adjacent button toggles direction (`↑`/`↓`).
+  - `Page.css`: added shared `.page-sort-order-btn` styles and updated side-list sort row layout to place dropdown and toggle on the same line.
+- Validation:
+  - TypeScript diagnostics clean for all modified files.
+
+### 2026-04-23 - Unified dropdown sorting with ID and created-date options
+
+- Request: revert date behavior to created-date sorting and replace sort buttons with dropdowns that include ID and Date Added options across all sortable views.
+- Symptoms discovered:
+  - toggle-button sorting made it harder to discover all sort modes.
+  - previous show-level date behavior using `last_recorded_at` did not match expected results.
+- Solution:
+  - `TVShows.tsx`: replaced show/episode sort buttons with dropdowns; added `ID` and `Date Added` options (plus title A-Z/Z-A); date sorts now use `created_at` ordering.
+  - `Movies.tsx`: replaced sort buttons with dropdown containing title/ID/date-added options; date-added uses `created_at` ordering.
+  - `Library.tsx`: expanded existing dropdowns (group and video) to include title/ID/date-added options and ascending/descending variants.
+  - `types.ts`: removed temporary `last_recorded_at` typing from `Show` after reverting strategy.
+- Validation:
+  - TypeScript diagnostics clean for all modified files.
+
+### 2026-04-22 - Date sort aligned to Date Added semantics
+
+- Request: clarify and correct date sort behavior to better match Channels' Date Added expectations.
+- Symptoms discovered:
+  - UI labels said `Date`, which was ambiguous against Date Added / Date Updated / Date Released terminology in Channels tools.
+  - TV show list date ordering could feel wrong when series were sorted by `created_at` only.
+- Solution:
+  - `TVShows.tsx`: renamed date sort labels to `Date Added` (show list and episode list).
+  - TV show date sort now prefers `last_recorded_at`, then falls back to `created_at`, then `updated_at`.
+  - Episode date sort uses `created_at` with fallback to `updated_at`.
+  - `Movies.tsx`: renamed date sort label to `Date Added` (behavior remains `created_at`-based).
+  - `types.ts`: added optional `last_recorded_at` to `Show` type for API parity.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+
 ## v1.3.0 — 2026-04-22
 
 ### 2026-04-22 - Search UI polish: icons and inline clear button

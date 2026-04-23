@@ -1,14 +1,47 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchChannels, fetchRecordings, trashRecording, markAsNotRecorded, fetchDvrFile } from '../api/recordings';
 import type { Channel, Recording } from '../api/types';
 import { useStore } from '../store/useStore';
 import type { AppState } from '../store/useStore';
 import { applyLogoFallback, buildChannelLogoMap, logoForChannelKey } from '../lib/channelLogos';
+import { useResizableSidebar } from '../lib/useResizableSidebar';
 import RecordingDetail from '../components/RecordingDetail';
 import './Page.css';
 
+interface RecentRecordingsCacheEntry {
+  recordings: Recording[];
+  channelLogos: Record<string, string>;
+  newestCreatedAt: number;
+  groups: ReturnType<typeof groupByDayTime>;
+}
+
+const recentRecordingsCache = new Map<string, RecentRecordingsCacheEntry>();
+const INITIAL_VISIBLE_DAY_GROUPS = 3;
+const VISIBLE_DAY_GROUPS_STEP = 2;
+
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+function newestCreatedAt(recordings: Recording[]): number {
+  return recordings.reduce((max, rec) => Math.max(max, rec.created_at ?? 0), 0);
+}
+
+function hasRecordingFeedChanged(previous: Recording[], next: Recording[]): boolean {
+  if (previous.length !== next.length) return true;
+  for (let i = 0; i < previous.length; i += 1) {
+    if (previous[i]?.id !== next[i]?.id) return true;
+  }
+  return false;
+}
+
+function writeRecentRecordingsCache(key: string, recordings: Recording[], channelLogos: Record<string, string>) {
+  recentRecordingsCache.set(key, {
+    recordings,
+    channelLogos,
+    newestCreatedAt: newestCreatedAt(recordings),
+    groups: groupByDayTime(recordings),
+  });
+}
 
 function groupByDayTime(recordings: Recording[]) {
   const groups: {
@@ -51,20 +84,28 @@ function logoForRecording(rec: Recording, logoMap: Record<string, string>): stri
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function RecentRecordings() {
-  const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [channelLogos, setChannelLogos] = useState<Record<string, string>>({});
+  const activeServerId = useStore((s: AppState) => s.activeServerId);
+  const serverChangeVersion = useStore((s: AppState) => s.serverChangeVersion);
+  const cacheKey = `${activeServerId}:${serverChangeVersion}`;
+  const cachedEntry = recentRecordingsCache.get(cacheKey);
+  const [recordings, setRecordings] = useState<Recording[]>(cachedEntry?.recordings ?? []);
+  const [groups, setGroups] = useState<ReturnType<typeof groupByDayTime>>(cachedEntry?.groups ?? []);
+  const [channelLogos, setChannelLogos] = useState<Record<string, string>>(cachedEntry?.channelLogos ?? {});
   const [selected, setSelected] = useState<Recording | null>(null);
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedEntry);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [sidebarWidth, setSidebarWidth] = useState(300);
-  const [isResizing, setIsResizing] = useState(false);
+  const [visibleDayGroups, setVisibleDayGroups] = useState(INITIAL_VISIBLE_DAY_GROUPS);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const { width: sidebarWidth, isResizing, handleMouseDown } = useResizableSidebar({
+    initialWidth: 300,
+    minWidth: 200,
+    maxWidth: 600,
+  });
   const navigate = useNavigate();
   const playItem = useStore((s: AppState) => s.playItem);
-  const serverChangeVersion = useStore((s: AppState) => s.serverChangeVersion);
   const apiVersionApproved = useStore((s: AppState) => s.apiVersionApproved);
-
   function selectRecording(rec: Recording) {
     setSelected(rec);
     setSelectedRuleId(null);
@@ -80,7 +121,12 @@ export default function RecentRecordings() {
     }
     try {
       await trashRecording(rec.id);
-      setRecordings((list) => list.filter((r) => r.id !== rec.id));
+      setRecordings((list) => {
+        const next = list.filter((r) => r.id !== rec.id);
+        writeRecentRecordingsCache(cacheKey, next, channelLogos);
+        setGroups(groupByDayTime(next));
+        return next;
+      });
       setSelected(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -108,10 +154,22 @@ export default function RecentRecordings() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const cached = recentRecordingsCache.get(cacheKey);
+    setVisibleDayGroups(INITIAL_VISIBLE_DAY_GROUPS);
+    setLoading(!cached);
     setError(null);
     setSelected(null);
     setSelectedRuleId(null);
+    if (cached) {
+      setRecordings(cached.recordings);
+      setGroups(cached.groups);
+      setChannelLogos(cached.channelLogos);
+    } else {
+      setRecordings([]);
+      setGroups([]);
+      setChannelLogos({});
+    }
+
     void (async () => {
       try {
         const [loadedRecordings, loadedChannels] = await Promise.all([
@@ -119,8 +177,18 @@ export default function RecentRecordings() {
           fetchChannels().catch(() => [] as Channel[]),
         ]);
         if (cancelled) return;
-        setRecordings(loadedRecordings);
-        setChannelLogos(buildChannelLogoMap(loadedChannels));
+        const nextLogos = buildChannelLogoMap(loadedChannels);
+        const previousRecordings = cached?.recordings ?? [];
+        const hasNewItems = loadedRecordings.some((rec) => rec.created_at > (cached?.newestCreatedAt ?? 0));
+        const feedChanged = hasRecordingFeedChanged(previousRecordings, loadedRecordings);
+
+        writeRecentRecordingsCache(cacheKey, loadedRecordings, nextLogos);
+
+        if (!cached || hasNewItems || feedChanged) {
+          setRecordings(loadedRecordings);
+          setGroups(groupByDayTime(loadedRecordings));
+          setChannelLogos(nextLogos);
+        }
       } catch (e) {
         if (cancelled) return;
         const msg = e instanceof Error ? e.message : String(e);
@@ -133,34 +201,27 @@ export default function RecentRecordings() {
     return () => {
       cancelled = true;
     };
-  }, [serverChangeVersion]);
-
-  const handleMouseDown = () => {
-    setIsResizing(true);
-  };
+  }, [cacheKey]);
 
   useEffect(() => {
-    if (!isResizing) return;
+    const node = listRef.current;
+    if (!node) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
-      const newWidth = Math.max(200, Math.min(600, e.clientX));
-      setSidebarWidth(newWidth);
+    const handleScroll = () => {
+      const remaining = node.scrollHeight - node.scrollTop - node.clientHeight;
+      if (remaining > 240) return;
+      setVisibleDayGroups((current) => {
+        if (current >= groups.length) return current;
+        return Math.min(current + VISIBLE_DAY_GROUPS_STEP, groups.length);
+      });
     };
 
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
+    handleScroll();
+    node.addEventListener('scroll', handleScroll);
+    return () => node.removeEventListener('scroll', handleScroll);
+  }, [groups.length]);
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizing]);
-
-  const groups = useMemo(() => groupByDayTime(recordings), [recordings]);
+  const displayedGroups = groups.slice(0, visibleDayGroups);
 
   return (
     <div className={`page page--split ${isResizing ? 'resizing' : ''}`}>
@@ -169,8 +230,8 @@ export default function RecentRecordings() {
         <h2 className="show-list__title">Recent Recordings</h2>
         {loading && <p className="page__status">Loading…</p>}
         {error && <p className="page__error">⚠ {error}</p>}
-        <div className="rec-list__items">
-          {groups.map((group) => (
+        <div className="rec-list__items" ref={listRef}>
+          {displayedGroups.map((group) => (
             <div key={group.dateKey}>
               <div className="rec-day-header">{group.label}</div>
               {group.timeGroups.map((timeGroup) => (
@@ -210,6 +271,9 @@ export default function RecentRecordings() {
               ))}
             </div>
           ))}
+          {displayedGroups.length < groups.length && (
+            <p className="page__status">Scroll for older recordings…</p>
+          )}
         </div>
       </aside>
 
