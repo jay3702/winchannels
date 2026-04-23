@@ -153,6 +153,8 @@ export default function RecordingDetail({
           </p>
         )}
 
+        <p className="rec-detail__path">Path: {item.path}</p>
+
         {item.genres && item.genres.length > 0 && (
           <p className="rec-detail__genres">{item.genres.join(' · ')}</p>
         )}
@@ -170,7 +172,7 @@ export default function RecordingDetail({
                 className="rec-detail__action-btn rec-detail__action-btn--secondary"
                 onClick={onMarkNotRecorded}
               >
-                Mark as Not Recorded
+                ✕ Mark as Not Recorded
               </button>
             )}
             {onTrash && (
@@ -182,7 +184,7 @@ export default function RecordingDetail({
                   }
                 }}
               >
-                Trash
+                🗑 Trash
               </button>
             )}
           </div>

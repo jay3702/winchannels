@@ -14,6 +14,102 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+## v1.3.0 — 2026-04-22
+
+### 2026-04-22 - Search UI polish: icons and inline clear button
+
+- Request: add icons to Search, Trash, and Mark as Not Recorded buttons; move the ✕ clear button inside the search textbox on the right edge; style it red.
+- Rationale: visual affordance for destructive/utility actions; inline clear button follows common browser/address-bar pattern.
+- Solution:
+  - `Search.tsx`: wrapped input in `.search-panel__input-wrap` (relative container); absolutely positioned `.search-panel__clear-btn` at right edge; button only renders when keyword is non-empty.
+  - Added 🔍 prefix to Search button text.
+  - `RecordingDetail.tsx`: added 🗑️ prefix to Trash button and ✕ prefix to Mark as Not Recorded button.
+  - `Page.css`: `.search-panel__input-wrap` sets `position: relative`; `.search-panel__clear-btn` uses `position: absolute; right: 8px; z-index: 1` with no background/border; input gets `z-index: 0` so button overlays it. `padding-right: 36px` keeps text clear of the button.
+- Validation:
+  - TypeScript diagnostics clean.
+
+### 2026-04-22 - Search persistence, clear action, and series-first ordering
+
+- Request: keep search results when navigating away/back, add a clear-search button, and order results with matching series first then episodes by created date.
+- Rationale: users often inspect multiple hits by navigating to details and returning; rerunning the query each time is friction.
+- Solution:
+  - `Search.tsx`: persisted `keyword`, `submittedKeyword`, and `searchType` to localStorage and restored them on page mount.
+  - Added Clear button (`✕`) beside Search to reset keyword and results quickly.
+  - Updated result ordering to rank by type (`TV Series` first, then `TV Episode`, then `Movie`, then `Video`) and sort within each type by `created_at` descending.
+- Validation:
+  - TypeScript diagnostics clean for modified file.
+
+### 2026-04-22 - Explicit Enter key execution for Search
+
+- Request: ensure pressing Enter in the Search textbox executes the search.
+- Rationale: keyboard-first flow should not depend only on button clicks.
+- Solution:
+  - `Search.tsx`: added explicit `onKeyDown` handling on the keyword input to execute search when Enter is pressed.
+  - Search form submit behavior remains in place; this makes Enter execution explicit and reliable.
+- Validation:
+  - TypeScript diagnostics clean for modified file.
+
+### 2026-04-22 - Search UX: explicit Search button and episode title matching for Title mode
+
+- Request: stop incremental filtering; execute search only on explicit action, but re-run when search type changes. Also fix Title mode so an episode with matching `episode_title` is returned.
+- Symptoms discovered:
+  - keyword typing updated results immediately (incremental behavior).
+  - `Title` mode did not return episodes when only `episode_title` matched (for example: "One Last Call").
+- Solution:
+  - `Search.tsx`: introduced `submittedKeyword` state so results are computed from the last executed keyword.
+  - Added a Search button and submit handler; Enter key now submits via form.
+  - Added auto re-execute on search-type change by re-submitting the current keyword when radio selection changes.
+  - Updated TV episode Title-mode matching to include both `title` and `episode_title`.
+  - `Page.css`: added `.search-panel__input-row` layout for textbox + Search button.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+
+### 2026-04-22 - Show file path in episode and movie details
+
+- Request: add the recording file path to the episode details page and movie detail page.
+- Rationale: path visibility helps with troubleshooting source files and share-path mapping.
+- Solution:
+  - `RecordingDetail.tsx`: added a dedicated `Path: ...` line in the episode/recording detail body.
+  - `Movies.tsx`: added a dedicated `Path: ...` line in movie details and removed duplicate `path` from the generic attributes list.
+  - `Page.css`: added `.rec-detail__path` and `.media-detail__path` styles with wrapping for long paths.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+
+### 2026-04-22 - Add cross-library Search page with typed matching and result navigation
+
+- Request: add a Search page in the main menu (above Settings) with a keyword textbox, search-type radio options, and a persistent results table. Support targets: `show_id`, `program_id`, title fields, and summary fields, with a special series-name mode.
+- Rationale: users need a direct way to find recordings and library items by IDs and text metadata, then jump straight to the relevant detail view.
+- Solution:
+  - Added `/search` route and Sidebar navigation item.
+  - Added new `Search.tsx` page that loads shows, episodes, movies, and videos, then filters by search type:
+    - Any: matches across ID/title/summary text fields (excludes season/episode numbers as requested).
+    - Title: matches only `title`.
+    - Summary: matches `summary` and `full_summary`.
+    - Series Name: resolves matching show names, then returns rows for those series plus episodes whose `show_id` maps to matched series.
+  - Added persistent results table columns: Type, Created Date, Modified Date, Title, Episode Title, Summary, Full Summary.
+  - Added row-click navigation targets:
+    - TV Episode -> `/tv?showId=...&episodeId=...`
+    - TV Series -> `/tv?showId=...`
+    - Movie -> `/movies?movieId=...`
+    - Video -> `/library?groupId=...&videoId=...`
+  - Added deep-link query handling:
+    - `TVShows.tsx` now supports `episodeId` preselection after loading show episodes.
+    - `Movies.tsx` now supports `movieId` preselection.
+    - `Library.tsx` now supports `groupId` and `videoId` preselection/highlight.
+  - Added Search-specific styles to `Page.css` for form controls and table layout.
+- Validation:
+  - TypeScript diagnostics clean across all modified files.
+
+### 2026-04-22 - Use created date for TV show/episode Date sort
+
+- Request: stop sorting TV shows/episodes by modified timestamp for the Date sort; use created date instead.
+- Rationale: modified timestamps can drift from recording chronology and produced ordering that did not match user expectations.
+- Solution:
+  - Updated `TVShows.tsx` Date sort logic for show list and episode list to use `created_at` instead of `updated_at`.
+  - Preserved existing sort toggle behavior and Date label.
+- Validation:
+  - TypeScript diagnostics clean for updated file.
+
 ## v1.2.2 — 2026-04-21
 
 ### 2026-04-21 - Sort toggle buttons; Live TV title wrap fix

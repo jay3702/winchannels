@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { fetchVideoGroups, fetchVideosInGroup } from '../api/library';
 import type { VideoGroup, Video } from '../api/types';
 import MediaCard from '../components/MediaCard';
@@ -10,6 +11,7 @@ type SortMode = 'alpha' | 'date';
 export default function Library() {
   const [groups, setGroups] = useState<VideoGroup[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<VideoGroup | null>(null);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [videos, setVideos] = useState<Video[]>([]);
   const [groupSort, setGroupSort] = useState<SortMode>('alpha');
   const [videoSort, setVideoSort] = useState<SortMode>('date');
@@ -17,6 +19,9 @@ export default function Library() {
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
+  const [searchParams] = useSearchParams();
+  const requestedGroupId = searchParams.get('groupId');
+  const requestedVideoId = searchParams.get('videoId');
 
   const sortedGroups = useMemo(() => {
     const list = [...groups];
@@ -42,19 +47,33 @@ export default function Library() {
     setLoadingGroups(true);
     setError(null);
     setSelectedGroup(null);
+    setSelectedVideoId(null);
     setVideos([]);
     fetchVideoGroups()
-      .then(setGroups)
+      .then((loaded) => {
+        setGroups(loaded);
+        if (requestedGroupId) {
+          const match = loaded.find((g) => g.id === requestedGroupId);
+          if (match) selectGroup(match, requestedVideoId ?? undefined);
+        }
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoadingGroups(false));
-  }, [serverChangeVersion]);
+  }, [requestedGroupId, requestedVideoId, serverChangeVersion]);
 
-  function selectGroup(group: VideoGroup) {
+  function selectGroup(group: VideoGroup, preferredVideoId?: string) {
     setSelectedGroup(group);
+    setSelectedVideoId(null);
     setVideos([]);
     setLoadingVideos(true);
     fetchVideosInGroup(group.id)
-      .then(setVideos)
+      .then((loaded) => {
+        setVideos(loaded);
+        if (preferredVideoId) {
+          const preferred = loaded.find((video) => video.id === preferredVideoId);
+          if (preferred) setSelectedVideoId(preferred.id);
+        }
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoadingVideos(false));
   }
@@ -119,6 +138,9 @@ export default function Library() {
                   duration={v.duration}
                   watched={v.watched}
                   playbackTime={v.playback_time}
+                  onClick={() => setSelectedVideoId(v.id)}
+                  selected={selectedVideoId === v.id}
+                  ariaLabel={`Select ${v.video_title}`}
                 />
               ))}
             </div>

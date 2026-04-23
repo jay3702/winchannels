@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { fetchMovies, setMovieWatched } from '../api/recordings';
 import type { Movie } from '../api/types';
 import MediaCard from '../components/MediaCard';
@@ -25,7 +26,7 @@ function formatValue(value: unknown): string {
 }
 
 function movieAttributes(movie: Movie): Array<{ key: string; label: string; value: string }> {
-  const hidden = new Set(['image_url', 'thumbnail_url', 'commercials']);
+  const hidden = new Set(['image_url', 'thumbnail_url', 'commercials', 'path']);
   return Object.entries(movie)
     .filter(([key, value]) => !hidden.has(key) && value != null && value !== '')
     .map(([key, value]) => ({ key, label: labelKey(key), value: formatValue(value) }))
@@ -58,6 +59,8 @@ export default function Movies() {
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
   const apiVersionApproved = useStore((s) => s.apiVersionApproved);
+  const [searchParams] = useSearchParams();
+  const requestedMovieId = searchParams.get('movieId');
 
   useEffect(() => {
     setLoading(true);
@@ -66,11 +69,14 @@ export default function Movies() {
     fetchMovies({ sort: 'date_added', order: 'desc' })
       .then((loaded) => {
         setMovies(loaded);
-        setSelectedMovie((prev) => prev ? loaded.find((m) => m.id === prev.id) ?? prev : null);
+        setSelectedMovie((prev) => {
+          if (requestedMovieId) return loaded.find((m) => m.id === requestedMovieId) ?? null;
+          return prev ? loaded.find((m) => m.id === prev.id) ?? prev : null;
+        });
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [serverChangeVersion]);
+  }, [requestedMovieId, serverChangeVersion]);
 
   const displayed = filter === 'unwatched' ? movies.filter((m) => !m.watched) : movies;
   const sortedDisplayed = useMemo(() => {
@@ -193,6 +199,7 @@ export default function Movies() {
               {(selectedMovie.full_summary || selectedMovie.summary) && (
                 <p className="media-detail__description">{selectedMovie.full_summary || selectedMovie.summary}</p>
               )}
+              <p className="media-detail__path">Path: {selectedMovie.path}</p>
               <dl className="media-attrs" aria-label="Movie details">
                 {movieAttributes(selectedMovie).map((attr) => (
                   <div key={attr.key} className="media-attrs__row">

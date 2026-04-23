@@ -79,6 +79,7 @@ export default function TVShows() {
   const playItem = useStore((s) => s.playItem);
   const apiVersionApproved = useStore((s) => s.apiVersionApproved);
   const requestedShowId = searchParams.get('showId');
+  const requestedEpisodeId = searchParams.get('episodeId');
 
   useEffect(() => {
     const rawFilter = searchParams.get('filter');
@@ -103,7 +104,7 @@ export default function TVShows() {
       list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
       if (showSortOrder === 'desc') list.reverse();
     } else {
-      list.sort((a, b) => (b.updated_at ?? b.created_at ?? 0) - (a.updated_at ?? a.created_at ?? 0));
+      list.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
       if (showSortOrder === 'asc') list.reverse();
     }
     return list;
@@ -119,7 +120,7 @@ export default function TVShows() {
       });
       if (episodeSortOrder === 'desc') list.reverse();
     } else {
-      list.sort((a, b) => b.updated_at - a.updated_at);
+      list.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
       if (episodeSortOrder === 'asc') list.reverse();
     }
     return list;
@@ -137,14 +138,14 @@ export default function TVShows() {
         setShows(loaded);
         if (requestedShowId) {
           const match = loaded.find((s) => s.id === requestedShowId);
-          if (match) selectShow(match);
+          if (match) selectShow(match, requestedEpisodeId ?? undefined);
         }
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoadingShows(false));
-  }, [requestedShowId, serverChangeVersion]);
+  }, [requestedEpisodeId, requestedShowId, serverChangeVersion]);
 
-  function selectShow(show: Show) {
+  function selectShow(show: Show, preferredEpisodeId?: string) {
     console.log('[selectShow] called with:', show);
     setSelectedShow(show);
     setEpisodes([]);
@@ -156,6 +157,13 @@ export default function TVShows() {
       .then((eps) => {
         console.log('[selectShow] episodes loaded:', eps);
         setEpisodes(eps);
+        if (preferredEpisodeId) {
+          const preferred = eps.find((ep) => ep.id === preferredEpisodeId);
+          if (preferred) {
+            selectEpisode(preferred);
+            return;
+          }
+        }
         setSelectedEpisode(null);
       })
       .catch((e: unknown) => {

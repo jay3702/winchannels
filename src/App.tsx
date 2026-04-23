@@ -7,6 +7,7 @@ import Live from './pages/Live';
 import TVShows from './pages/TVShows';
 import Movies from './pages/Movies';
 import Library from './pages/Library';
+import Search from './pages/Search';
 import Settings from './pages/Settings';
 import { useStore } from './store/useStore';
 import './App.css';
@@ -44,6 +45,7 @@ function App() {
               <Route path="/tv"       element={<TVShows />} />
               <Route path="/movies"   element={<Movies />} />
               <Route path="/library"  element={<Library />} />
+              <Route path="/search"   element={<Search />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           )}

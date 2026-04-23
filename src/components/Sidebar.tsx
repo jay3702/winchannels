@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: '/tv',       label: 'TV Shows',    icon: '📺' },
   { to: '/movies',   label: 'Movies',      icon: '🎬' },
   { to: '/library',  label: 'Videos',      icon: '📁' },
+  { to: '/search',   label: 'Search',      icon: '🔎' },
   { to: '/settings', label: 'Settings',    icon: '⚙' },
 ];
 

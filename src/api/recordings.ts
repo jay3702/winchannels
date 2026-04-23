@@ -8,7 +8,7 @@ export function fetchShows(): Promise<Show[]> {
 }
 
 export function fetchShow(id: string): Promise<Show> {
-  return request<Show>(`/api/v1/shows/${id}`);
+  return request<Show>(`/api/v1/shows/${encodeURIComponent(id)}`);
 }
 
 export function fetchChannels(): Promise<Channel[]> {
@@ -27,11 +27,14 @@ export function fetchEpisodes(params?: ListParams): Promise<Episode[]> {
 }
 
 export function fetchEpisode(id: string): Promise<Episode> {
-  return request<Episode>(`/api/v1/episodes/${id}`);
+  return request<Episode>(`/api/v1/episodes/${encodeURIComponent(id)}`);
 }
 
 export function fetchEpisodesForShow(showId: string): Promise<Episode[]> {
-  return request<Episode[]>(`/api/v1/shows/${showId}/episodes`);
+  return request<Episode[]>(`/api/v1/shows/${encodeURIComponent(showId)}/episodes`, {
+    sort: 'date_added',
+    order: 'desc',
+  });
 }
 
 // ── Movies ─────────────────────────────────────────────────────────────────
@@ -46,7 +49,7 @@ export function fetchMovies(params?: ListParams): Promise<Movie[]> {
 }
 
 export function fetchMovie(id: string): Promise<Movie> {
-  return request<Movie>(`/api/v1/movies/${id}`);
+  return request<Movie>(`/api/v1/movies/${encodeURIComponent(id)}`);
 }
 
 // ── All Recordings ─────────────────────────────────────────────────────────
@@ -102,7 +105,7 @@ async function runMutationCandidates(candidates: MutationCandidate[]): Promise<v
 }
 
 function buildWatchedCandidates(id: string, watched: boolean): MutationCandidate[] {
-  const dvrFilePath = `/dvr/files/${id}`;
+  const dvrFilePath = `/dvr/files/${encodeURIComponent(id)}`;
   // HAR-confirmed in Channels web client for both watched and unwatched actions.
   return [{ path: `${dvrFilePath}/${watched ? 'watch' : 'unwatch'}`, method: 'PUT' }];
 }
@@ -110,7 +113,7 @@ function buildWatchedCandidates(id: string, watched: boolean): MutationCandidate
 function buildPlaybackCandidates(id: string, playbackTime: number): MutationCandidate[] {
   const seconds = Math.max(0, Math.floor(playbackTime));
   // HAR-confirmed in Channels web client.
-  return [{ path: `/dvr/files/${id}/playback_time/${seconds}`, method: 'PUT' }];
+  return [{ path: `/dvr/files/${encodeURIComponent(id)}/playback_time/${seconds}`, method: 'PUT' }];
 }
 
 export function setEpisodeWatched(id: string, watched: boolean): Promise<void> {
@@ -133,12 +136,12 @@ export function setMoviePlaybackTime(id: string, playbackTime: number): Promise<
 
 /** Fetch the raw DVR file record. Used to check RuleID (pass association). */
 export function fetchDvrFile(id: string): Promise<DvrFile> {
-  return request<DvrFile>(`/dvr/files/${id}`);
+  return request<DvrFile>(`/dvr/files/${encodeURIComponent(id)}`);
 }
 
 /** Permanently delete the recording file from the DVR. */
 export function trashRecording(id: string): Promise<void> {
-  return runMutationCandidates([{ path: `/dvr/files/${id}`, method: 'DELETE' }]);
+  return runMutationCandidates([{ path: `/dvr/files/${encodeURIComponent(id)}`, method: 'DELETE' }]);
 }
 
 /**
@@ -146,5 +149,6 @@ export function trashRecording(id: string): Promise<void> {
  * Uses the program_id field (EPxxxxxxxx) from the recording.
  */
 export function markAsNotRecorded(programId: string): Promise<void> {
-  return runMutationCandidates([{ path: `/dvr/programs/${programId}`, method: 'DELETE' }]);
+  const encoded = encodeURIComponent(programId);
+  return runMutationCandidates([{ path: `/dvr/programs/${encoded}`, method: 'DELETE' }]);
 }
