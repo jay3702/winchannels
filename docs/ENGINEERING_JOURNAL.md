@@ -14,6 +14,14 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-23 - Fix CI build failure: unused recordings state variable
+
+- Request: CI builds failed on all four platform targets after v1.3.1 push.
+- Symptoms: TypeScript strict mode flagged `recordings` in `RecentRecordings.tsx` line 91 as "declared but its value is never read", causing all platform builds to exit with code 1.
+- Root cause: the `recordings` read side of `useState` was kept during the cache refactor even though rendering uses the pre-grouped `groups` state and mutations use the functional-update form of `setRecordings`.
+- Solution: changed `const [recordings, setRecordings]` to `const [, setRecordings]` to omit the unused read binding.
+- Validation: TypeScript diagnostics clean; pushed as v1.3.2.
+
 ### 2026-04-23 - Recent Recordings cache with background refresh
 
 - Request: avoid blocking every time Recent Recordings is revisited by caching the last loaded list, then refreshing in the background and updating only when new items or feed changes are detected.
