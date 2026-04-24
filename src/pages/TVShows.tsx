@@ -30,8 +30,8 @@ function loadTvShowsSortState(): {
     const raw = localStorage.getItem(TV_SHOWS_SORT_STATE_KEY);
     if (!raw) {
       return {
-        showSort: 'title',
-        showSortOrder: defaultOrderFor('title'),
+        showSort: 'last-recorded',
+        showSortOrder: defaultOrderFor('last-recorded'),
         episodeSort: 'date-added',
         episodeSortOrder: defaultOrderFor('date-added'),
       };
@@ -46,7 +46,7 @@ function loadTvShowsSortState(): {
       value === 'title' || value === 'id' || value === 'date-added' || value === 'date-updated' || value === 'last-recorded';
     const isEpisodeField = (value: unknown): value is EpisodeSortField =>
       value === 'title' || value === 'id' || value === 'date-added' || value === 'date-updated';
-    const showSort = isShowField(parsed.showSort) ? parsed.showSort : 'title';
+    const showSort = isShowField(parsed.showSort) ? parsed.showSort : 'last-recorded';
     const episodeSort = isEpisodeField(parsed.episodeSort) ? parsed.episodeSort : 'date-added';
     return {
       showSort,
@@ -60,8 +60,8 @@ function loadTvShowsSortState(): {
     };
   } catch {
     return {
-      showSort: 'title',
-      showSortOrder: defaultOrderFor('title'),
+      showSort: 'last-recorded',
+      showSortOrder: defaultOrderFor('last-recorded'),
       episodeSort: 'date-added',
       episodeSortOrder: defaultOrderFor('date-added'),
     };

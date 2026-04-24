@@ -14,6 +14,17 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-23 - TV Shows default sort set to Last Recorded
+
+- Request: make Last Recorded the default sort in the TV show list.
+- Rationale: users expect the most recently recorded shows to surface first without changing sort controls.
+- Solution:
+  - `TVShows.tsx`: changed initial and fallback show sort defaults from `title` to `last-recorded`.
+  - Sort direction default remains field-based, so `last-recorded` defaults to descending.
+  - Existing persisted sort selections remain intact; the new default applies when no saved TV show sort state exists.
+- Validation:
+  - TypeScript diagnostics clean for modified file.
+
 ### 2026-04-23 - TV Shows list sort by last_recorded_at
 
 - Request: add a TV show list sort option for `last_recorded_at`.
