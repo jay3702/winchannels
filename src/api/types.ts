@@ -50,6 +50,7 @@ export interface Show {
   number_unwatched?: number;
   favorited?: boolean;
   last_watched_at?: number;
+  last_recorded_at?: number;
   created_at?: number;
   updated_at?: number;
 }

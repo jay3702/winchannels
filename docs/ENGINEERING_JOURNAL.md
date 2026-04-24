@@ -14,6 +14,18 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-23 - TV Shows list sort by last_recorded_at
+
+- Request: add a TV show list sort option for `last_recorded_at`.
+- Rationale: users want to prioritize shows by most recently recorded activity rather than created/updated metadata.
+- Solution:
+  - `TVShows.tsx`: added a show-list sort field `last-recorded`, wired to `Show.last_recorded_at`, and exposed it in the TV show sort dropdown as `Last Recorded`.
+  - Kept episode sort fields unchanged to avoid introducing an unsupported `last-recorded` mode where episode data does not provide that key.
+  - Updated sort-state parsing/validation to persist and restore the new show sort field safely.
+  - `types.ts`: added optional `last_recorded_at?: number` to `Show`.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+
 ### 2026-04-23 - Progressive list auto-fill loop: missing scrollbar when content fits
 
 - Request: user reported no scrollbar in Recent Recordings list despite seeing 5 recordings and "Scroll for more recordings" message.

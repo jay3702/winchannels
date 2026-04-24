@@ -8,21 +8,22 @@ import { useResizableSidebar } from '../lib/useResizableSidebar';
 import { useStore } from '../store/useStore';
 import './Page.css';
 
-type SortField = 'title' | 'id' | 'date-added' | 'date-updated';
+type ShowSortField = 'title' | 'id' | 'date-added' | 'date-updated' | 'last-recorded';
+type EpisodeSortField = 'title' | 'id' | 'date-added' | 'date-updated';
 const INITIAL_VISIBLE_SHOWS = 90;
 const VISIBLE_SHOWS_STEP = 60;
 const TV_SHOWS_SORT_STATE_KEY = 'winchannels_tvshows_sort_state_v1';
 
 const tvShowsCache = new Map<string, Show[]>();
 
-function defaultOrderFor(field: SortField): 'asc' | 'desc' {
+function defaultOrderFor(field: ShowSortField | EpisodeSortField): 'asc' | 'desc' {
   return field === 'title' ? 'asc' : 'desc';
 }
 
 function loadTvShowsSortState(): {
-  showSort: SortField;
+  showSort: ShowSortField;
   showSortOrder: 'asc' | 'desc';
-  episodeSort: SortField;
+  episodeSort: EpisodeSortField;
   episodeSortOrder: 'asc' | 'desc';
 } {
   try {
@@ -36,15 +37,17 @@ function loadTvShowsSortState(): {
       };
     }
     const parsed = JSON.parse(raw) as Partial<{
-      showSort: SortField;
+      showSort: ShowSortField;
       showSortOrder: 'asc' | 'desc';
-      episodeSort: SortField;
+      episodeSort: EpisodeSortField;
       episodeSortOrder: 'asc' | 'desc';
     }>;
-    const isField = (value: unknown): value is SortField =>
+    const isShowField = (value: unknown): value is ShowSortField =>
+      value === 'title' || value === 'id' || value === 'date-added' || value === 'date-updated' || value === 'last-recorded';
+    const isEpisodeField = (value: unknown): value is EpisodeSortField =>
       value === 'title' || value === 'id' || value === 'date-added' || value === 'date-updated';
-    const showSort = isField(parsed.showSort) ? parsed.showSort : 'title';
-    const episodeSort = isField(parsed.episodeSort) ? parsed.episodeSort : 'date-added';
+    const showSort = isShowField(parsed.showSort) ? parsed.showSort : 'title';
+    const episodeSort = isEpisodeField(parsed.episodeSort) ? parsed.episodeSort : 'date-added';
     return {
       showSort,
       showSortOrder: parsed.showSortOrder === 'asc' || parsed.showSortOrder === 'desc'
@@ -123,9 +126,9 @@ export default function TVShows() {
   const [selectedShow, setSelectedShow] = useState<Show | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [selectedEpisode, setSelectedEpisode] = useState<Episode | null>(null);
-  const [showSort, setShowSort] = useState<SortField>(initialSortState.showSort);
+  const [showSort, setShowSort] = useState<ShowSortField>(initialSortState.showSort);
   const [showSortOrder, setShowSortOrder] = useState<'asc' | 'desc'>(initialSortState.showSortOrder);
-  const [episodeSort, setEpisodeSort] = useState<SortField>(initialSortState.episodeSort);
+  const [episodeSort, setEpisodeSort] = useState<EpisodeSortField>(initialSortState.episodeSort);
   const [episodeSortOrder, setEpisodeSortOrder] = useState<'asc' | 'desc'>(initialSortState.episodeSortOrder);
   const [filter, setFilter] = useState<'all' | 'unwatched'>('all');
   const [loadingShows, setLoadingShows] = useState(!cachedShows);
@@ -186,6 +189,9 @@ export default function TVShows() {
         break;
       case 'date-updated':
         list.sort((a, b) => (a.updated_at ?? 0) - (b.updated_at ?? 0));
+        break;
+      case 'last-recorded':
+        list.sort((a, b) => (a.last_recorded_at ?? 0) - (b.last_recorded_at ?? 0));
         break;
     }
     if (showSortOrder === 'desc') list.reverse();
@@ -387,7 +393,7 @@ export default function TVShows() {
             className="page-sort-select"
             value={showSort}
             onChange={(e) => {
-              const next = e.target.value as SortField;
+              const next = e.target.value as ShowSortField;
               setShowSort(next);
               setShowSortOrder(defaultOrderFor(next));
             }}
@@ -397,6 +403,7 @@ export default function TVShows() {
             <option value="id">ID</option>
             <option value="date-added">Date Added</option>
             <option value="date-updated">Date Updated</option>
+            <option value="last-recorded">Last Recorded</option>
           </select>
           <div className="page-sort-order-stack" role="group" aria-label="TV show list sort direction">
             <button
@@ -492,7 +499,7 @@ export default function TVShows() {
                   className="page-sort-select"
                   value={episodeSort}
                   onChange={(e) => {
-                    const next = e.target.value as SortField;
+                    const next = e.target.value as EpisodeSortField;
                     setEpisodeSort(next);
                     setEpisodeSortOrder(defaultOrderFor(next));
                   }}
