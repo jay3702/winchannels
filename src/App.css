@@ -38,6 +38,32 @@
   letter-spacing: 0.04em;
 }
 
+/* ── App update banner ─────────────────────────────────────────────────── */
+
+.app-update-banner {
+  background: #12301f;
+  border-bottom: 1px solid #2f6f4a;
+  color: #b3f3cb;
+  font-size: 12px;
+  padding: 7px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.app-update-banner__link {
+  color: #8ce7b3;
+  text-decoration: underline;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.app-update-banner__link:hover {
+  color: #b3ffd3;
+}
+
 /* ── API version change banner ──────────────────────────────────────────── */
 
 .api-version-banner {

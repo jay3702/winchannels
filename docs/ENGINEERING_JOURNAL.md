@@ -14,6 +14,18 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-24 - Startup check for newer WinChannels release
+
+- Request: check on startup whether a newer app version exists.
+- Rationale: users should see available updates proactively instead of manually checking GitHub releases.
+- Solution:
+  - `App.tsx`: added a one-time startup check against GitHub Releases (`/repos/jay3702/winchannels/releases/latest`).
+  - Added semantic version comparison logic so only newer versions trigger a notice.
+  - Added a top-of-app update banner with latest version and a direct release link.
+  - Guarded the check with a ref so React StrictMode does not duplicate requests in development.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+
 ### 2026-04-23 - TV Shows default sort set to Last Recorded
 
 - Request: make Last Recorded the default sort in the TV show list.
