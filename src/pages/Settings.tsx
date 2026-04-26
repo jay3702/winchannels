@@ -167,6 +167,7 @@ export default function Settings() {
   const [serverSaveError, setServerSaveError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  const [preparingReport, setPreparingReport] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [bugReportDraft, setBugReportDraft] = useState('');
@@ -264,100 +265,112 @@ export default function Settings() {
     return validated;
   }
 
+  async function runConnectionTest(validatedServers: ServerOption[]): Promise<string> {
+    const lines: string[] = [];
+    let connectivityPassCount = 0;
+    let compatibilityIssueCount = 0;
+    const matrix = await fetchCompatibilityMatrix();
+    const matrixAvailable = Boolean(matrix);
+
+    for (const server of validatedServers) {
+      let testUrl = server.url;
+      let urlLabel = 'LAN';
+      if (server.tailscaleUrl) {
+        const lanOk = await probeUrl(server.url);
+        if (!lanOk) {
+          testUrl = server.tailscaleUrl;
+          urlLabel = 'Tailscale';
+        }
+      }
+      lines.push(`[${server.name}] ${testUrl} (${urlLabel})`);
+      try {
+        const [episodes, movies, shows] = await Promise.all([
+          requestFromServer<unknown[]>(testUrl, '/api/v1/episodes'),
+          requestFromServer<unknown[]>(testUrl, '/api/v1/movies'),
+          requestFromServer<unknown[]>(testUrl, '/api/v1/shows'),
+        ]);
+
+        const ep = Array.isArray(episodes)
+          ? episodes.length
+          : `bad format -> ${JSON.stringify(episodes).slice(0, 80)}`;
+        const mv = Array.isArray(movies) ? movies.length : 'bad format';
+        const sh = Array.isArray(shows) ? shows.length : 'bad format';
+        const detected = await fetchServerVersionInfo(testUrl);
+
+        lines.push(`  ✓ Episodes: ${ep}  Movies: ${mv}  Shows: ${sh}`);
+        connectivityPassCount += 1;
+
+        if (!detected?.serverVersion) {
+          lines.push('  ⚠ API Version: unable to detect from status endpoints');
+          compatibilityIssueCount += 1;
+        } else if (!matrixAvailable || !matrix) {
+          lines.push(`  ⚠ API Version: ${detected.serverVersion} (repository approvals unavailable)`);
+          compatibilityIssueCount += 1;
+        } else if (!isVersionVerified(matrix, detected)) {
+          const publicPart = detected.publicApiVersion ? `, public API ${detected.publicApiVersion}` : '';
+          lines.push(`  ⚠ API Version: server ${detected.serverVersion}${publicPart} (not verified in repository yet)`);
+          compatibilityIssueCount += 1;
+        } else {
+          const publicPart = detected.publicApiVersion ? `, public API ${detected.publicApiVersion}` : '';
+          lines.push(`  ✓ API Version: server ${detected.serverVersion}${publicPart} (verified in repository)`);
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        lines.push(`  ✗ ${msg}`);
+        compatibilityIssueCount += 1;
+      }
+      lines.push('');
+    }
+
+    const allConnectionsOk = connectivityPassCount === validatedServers.length;
+    const header = allConnectionsOk
+      ? compatibilityIssueCount === 0
+        ? `✓ Server checks complete (${connectivityPassCount}/${validatedServers.length} reachable, 0 compatibility issues)`
+        : `⚠ Server checks complete (${connectivityPassCount}/${validatedServers.length} reachable, ${compatibilityIssueCount} compatibility issue${compatibilityIssueCount === 1 ? '' : 's'})`
+      : `✗ Server checks complete (${connectivityPassCount}/${validatedServers.length} reachable, ${compatibilityIssueCount} compatibility issue${compatibilityIssueCount === 1 ? '' : 's'})`;
+    return [header, '', ...lines].join('\n').trim();
+  }
+
   async function testConnection() {
     const validatedServers = saveServers(false);
     if (!validatedServers) {
       setTestResult('✗ Fix server table errors, then test again.');
       return;
     }
-
     setTesting(true);
     setTestResult(null);
     try {
-      const lines: string[] = [];
-      let connectivityPassCount = 0;
-      let compatibilityIssueCount = 0;
-      const matrix = await fetchCompatibilityMatrix();
-      const matrixAvailable = Boolean(matrix);
-
-      for (const server of validatedServers) {
-        // Determine which URL to test: probe LAN, fall back to Tailscale
-        let testUrl = server.url;
-        let urlLabel = 'LAN';
-        if (server.tailscaleUrl) {
-          const lanOk = await probeUrl(server.url);
-          if (!lanOk) {
-            testUrl = server.tailscaleUrl;
-            urlLabel = 'Tailscale';
-          }
-        }
-        lines.push(`[${server.name}] ${testUrl} (${urlLabel})`);
-        try {
-          const [episodes, movies, shows] = await Promise.all([
-            requestFromServer<unknown[]>(testUrl, '/api/v1/episodes'),
-            requestFromServer<unknown[]>(testUrl, '/api/v1/movies'),
-            requestFromServer<unknown[]>(testUrl, '/api/v1/shows'),
-          ]);
-
-          const ep = Array.isArray(episodes)
-            ? episodes.length
-            : `bad format -> ${JSON.stringify(episodes).slice(0, 80)}`;
-          const mv = Array.isArray(movies) ? movies.length : 'bad format';
-          const sh = Array.isArray(shows) ? shows.length : 'bad format';
-          const detected = await fetchServerVersionInfo(testUrl);
-
-          lines.push(`  ✓ Episodes: ${ep}  Movies: ${mv}  Shows: ${sh}`);
-          connectivityPassCount += 1;
-
-          if (!detected?.serverVersion) {
-            lines.push('  ⚠ API Version: unable to detect from status endpoints');
-            compatibilityIssueCount += 1;
-          } else if (!matrixAvailable || !matrix) {
-            lines.push(`  ⚠ API Version: ${detected.serverVersion} (repository approvals unavailable)`);
-            compatibilityIssueCount += 1;
-          } else if (!isVersionVerified(matrix, detected)) {
-            const publicPart = detected.publicApiVersion ? `, public API ${detected.publicApiVersion}` : '';
-            lines.push(`  ⚠ API Version: server ${detected.serverVersion}${publicPart} (not verified in repository yet)`);
-            compatibilityIssueCount += 1;
-          } else {
-            const publicPart = detected.publicApiVersion ? `, public API ${detected.publicApiVersion}` : '';
-            lines.push(`  ✓ API Version: server ${detected.serverVersion}${publicPart} (verified in repository)`);
-          }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          lines.push(`  ✗ ${msg}`);
-          compatibilityIssueCount += 1;
-        }
-        lines.push('');
-      }
-
-      const allConnectionsOk = connectivityPassCount === validatedServers.length;
-      const header = allConnectionsOk
-        ? compatibilityIssueCount === 0
-          ? `✓ Server checks complete (${connectivityPassCount}/${validatedServers.length} reachable, 0 compatibility issues)`
-          : `⚠ Server checks complete (${connectivityPassCount}/${validatedServers.length} reachable, ${compatibilityIssueCount} compatibility issue${compatibilityIssueCount === 1 ? '' : 's'})`
-        : `✗ Server checks complete (${connectivityPassCount}/${validatedServers.length} reachable, ${compatibilityIssueCount} compatibility issue${compatibilityIssueCount === 1 ? '' : 's'})`;
-      setTestResult([header, '', ...lines].join('\n').trim());
+      const result = await runConnectionTest(validatedServers);
+      setTestResult(result);
     } finally {
       setTesting(false);
     }
   }
 
-  function openBugReportComposer() {
-    const active = servers.find((server) => server.id === useStore.getState().activeServerId) ?? servers[0];
-    const raw = buildBugReportDraft({
-      activeServerName: active?.name ?? 'Unknown',
-      apiVersion,
-      apiPublicVersion,
-      apiVersionApproved,
-      apiCompatibilityNote,
-      testResult,
-      errorLogText: getRecentClientErrorLogText(),
-    });
-    const template = redactServerUrls(raw, servers);
-    setBugReportDraft(template);
-    setReportCopyMessage(null);
-    setBugReportOpen(true);
+  async function openBugReportComposer() {
+    const validatedServers = saveServers(false);
+    if (!validatedServers) return;
+    setPreparingReport(true);
+    try {
+      const freshTestResult = await runConnectionTest(validatedServers);
+      setTestResult(freshTestResult);
+      const active = servers.find((server) => server.id === useStore.getState().activeServerId) ?? servers[0];
+      const raw = buildBugReportDraft({
+        activeServerName: active?.name ?? 'Unknown',
+        apiVersion,
+        apiPublicVersion,
+        apiVersionApproved,
+        apiCompatibilityNote,
+        testResult: freshTestResult,
+        errorLogText: getRecentClientErrorLogText(),
+      });
+      const template = redactServerUrls(raw, servers);
+      setBugReportDraft(template);
+      setReportCopyMessage(null);
+      setBugReportOpen(true);
+    } finally {
+      setPreparingReport(false);
+    }
   }
 
   async function copyBugReportDraft() {
@@ -565,8 +578,8 @@ export default function Settings() {
         <section className="settings-section">
           <h2 className="settings-section__title">Bug Report</h2>
           <div className="settings-row">
-            <button className="settings-save-btn" onClick={openBugReportComposer}>
-              Open Bug Report
+            <button className="settings-save-btn" onClick={() => { void openBugReportComposer(); }} disabled={preparingReport || testing}>
+              {preparingReport ? 'Preparing…' : 'Open Bug Report'}
             </button>
             <button className="settings-save-btn settings-save-btn--secondary" onClick={() => { setLogViewText(getRecentClientErrorLogText()); setLogViewOpen(true); }}>
               View Error Log
