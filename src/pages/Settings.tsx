@@ -8,6 +8,7 @@ import {
   requestFromServer,
   probeUrl,
 } from '../api/client';
+import { getRecentClientErrorLogText } from '../lib/clientErrorLog';
 import './Page.css';
 
 function makeServerId(): string {
@@ -18,8 +19,6 @@ interface UpdateInfo {
   latestVersion: string;
   latestUrl: string;
 }
-
-type ReportKind = 'bug' | 'feature';
 
 function parseVersionParts(version: string): number[] {
   return version
@@ -61,60 +60,58 @@ async function fetchLatestRelease(): Promise<UpdateInfo | null> {
   }
 }
 
-function buildIssueUrl(title: string, body: string): string {
-  const base = `${__APP_REPOSITORY_URL__.replace(/\/+$/, '')}/issues/new`;
-  const params = new URLSearchParams({ title, body });
-  return `${base}?${params.toString()}`;
-}
-
-interface BuildReportTemplateInput {
+interface BuildBugReportDraftInput {
   activeServerName: string;
-  activeServerUrl: string;
   apiVersion: string | null;
   apiPublicVersion: string | null;
   apiVersionApproved: boolean;
   apiCompatibilityNote: string | null;
   testResult: string | null;
+  errorLogText: string;
 }
 
-function buildReportTemplate(input: BuildReportTemplateInput): string {
+function buildBugReportDraft(input: BuildBugReportDraftInput): string {
   const compatibility = input.apiVersionApproved ? 'verified' : 'not-verified';
-  const testSummary = input.testResult?.split('\n')[0] ?? 'Not run yet';
-  const details = input.testResult ? input.testResult : 'No diagnostic output captured yet.';
+  const details = input.testResult ? input.testResult : 'Test Connection has not been run yet.';
+  const appMode = window.__TAURI_INTERNALS__ ? 'Tauri desktop' : 'Browser development';
 
   return [
-    '# WinChannels Report',
+    '# WinChannels Bug Report',
     '',
-    '## Category',
-    '- [ ] Bug report',
-    '- [ ] Feature request',
-    '',
-    '## Summary',
-    '<Describe the problem or feature request>',
+    'Please include a concise summary and exact steps to reproduce before posting this to Channels Community.',
+    'Remove or edit any private hostnames or IP addresses if you do not want them included in a public post.',
     '',
     '## Environment',
     `- WinChannels version: ${__APP_VERSION__}`,
+    `- Client mode: ${appMode}`,
+    `- User agent: ${navigator.userAgent}`,
     `- Active server: ${input.activeServerName}`,
-    `- Active server URL: ${input.activeServerUrl}`,
     `- Internal server version: ${input.apiVersion ?? 'not detected'}`,
     `- Public API version: ${input.apiPublicVersion ?? 'not detected'}`,
     `- Compatibility status: ${compatibility}`,
     `- Compatibility note: ${input.apiCompatibilityNote ?? 'none'}`,
     '',
-    '## API Compatibility Diagnostics',
-    `- Last Test Connection summary: ${testSummary}`,
+    '## Summary',
+    '<Describe the problem you saw>',
     '',
-    '```text',
+    '## Steps To Reproduce',
+    '1. <Step one>',
+    '2. <Step two>',
+    '3. <Expected result>',
+    '4. <Actual result>',
+    '',
+    '## Server Check Output',
+    '```',
     details,
     '```',
     '',
-    '## Steps To Reproduce / Requested Behavior',
-    '1. <Step one>',
-    '2. <Step two>',
-    '3. <Expected vs actual>',
+    '## Client Error Log (last 48 hours)',
+    '```',
+    input.errorLogText,
+    '```',
     '',
     '## Additional Notes',
-    '- <Optional screenshots/logs/context>',
+    '<Optional screenshots, timing notes, or other context>',
   ].join('\n');
 }
 
@@ -150,6 +147,10 @@ export default function Settings() {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
+  const [bugReportDraft, setBugReportDraft] = useState('');
+  const [logViewOpen, setLogViewOpen] = useState(false);
+  const [logViewText, setLogViewText] = useState('');
   const [reportCopyMessage, setReportCopyMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -321,41 +322,30 @@ export default function Settings() {
     }
   }
 
-  async function copyReportTemplate() {
+  function openBugReportComposer() {
     const active = servers.find((server) => server.id === useStore.getState().activeServerId) ?? servers[0];
-    const template = buildReportTemplate({
+    const template = buildBugReportDraft({
       activeServerName: active?.name ?? 'Unknown',
-      activeServerUrl: active?.url ?? 'Unknown',
       apiVersion,
       apiPublicVersion,
       apiVersionApproved,
       apiCompatibilityNote,
       testResult,
+      errorLogText: getRecentClientErrorLogText(),
     });
-    try {
-      await navigator.clipboard.writeText(template);
-      setReportCopyMessage('Report template copied to clipboard.');
-    } catch {
-      setReportCopyMessage('Unable to copy automatically. You can still use the prefilled links below.');
-    }
-    setTimeout(() => setReportCopyMessage(null), 3500);
+    setBugReportDraft(template);
+    setReportCopyMessage(null);
+    setBugReportOpen(true);
   }
 
-  function buildIssueLink(kind: ReportKind): string {
-    const active = servers.find((server) => server.id === useStore.getState().activeServerId) ?? servers[0];
-    const template = buildReportTemplate({
-      activeServerName: active?.name ?? 'Unknown',
-      activeServerUrl: active?.url ?? 'Unknown',
-      apiVersion,
-      apiPublicVersion,
-      apiVersionApproved,
-      apiCompatibilityNote,
-      testResult,
-    });
-    return buildIssueUrl(
-      kind === 'bug' ? '[Bug] WinChannels report' : '[Feature] WinChannels request',
-      template,
-    );
+  async function copyBugReportDraft() {
+    try {
+      await navigator.clipboard.writeText(bugReportDraft);
+      setReportCopyMessage('Bug report copied to clipboard.');
+    } catch {
+      setReportCopyMessage('Unable to copy automatically. Select the text and copy it manually.');
+    }
+    setTimeout(() => setReportCopyMessage(null), 3500);
   }
 
   return (
@@ -540,7 +530,7 @@ export default function Settings() {
                     ⚠ {apiCompatibilityNote ?? 'Detected version is not verified in the repository compatibility list yet.'}
                   </p>
                   <p className="settings-hint settings-hint--warn">
-                    Please use the report template below to submit a bug or feature request with your diagnostics.
+                    Please use the bug report composer below to package your diagnostics for Channels Community.
                   </p>
                 </>
               )}
@@ -551,21 +541,17 @@ export default function Settings() {
         </section>
 
         <section className="settings-section">
-          <h2 className="settings-section__title">Report Template</h2>
+          <h2 className="settings-section__title">Bug Report</h2>
           <div className="settings-row">
-            <button className="settings-save-btn" onClick={() => { void copyReportTemplate(); }}>
-              Copy Report Template
-            </button>
-            <a className="settings-save-btn settings-save-btn--secondary" href={buildIssueLink('bug')} target="_blank" rel="noreferrer">
+            <button className="settings-save-btn" onClick={openBugReportComposer}>
               Open Bug Report
-            </a>
-            <a className="settings-save-btn settings-save-btn--secondary" href={buildIssueLink('feature')} target="_blank" rel="noreferrer">
-              Open Feature Request
-            </a>
+            </button>
+            <button className="settings-save-btn settings-save-btn--secondary" onClick={() => { setLogViewText(getRecentClientErrorLogText()); setLogViewOpen(true); }}>
+              View Error Log
+            </button>
           </div>
-          {reportCopyMessage && <p className="settings-hint settings-hint--ok">{reportCopyMessage}</p>}
           <p className="settings-hint">
-            Use this for any bug report or feature request. When API compatibility is unverified, include the latest Test Connection output in your report.
+            Opens a local editor prefilled for Channels Community. It includes environment details, the latest Test Connection output, and the persistent client error log from the last 48 hours.
           </p>
         </section>
 
@@ -585,6 +571,57 @@ export default function Settings() {
           )}
         </section>
       </div>
+
+      {bugReportOpen && (
+        <div className="media-modal-backdrop" onClick={() => setBugReportOpen(false)}>
+          <div className="media-modal settings-report-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="media-modal__header">
+              <h3>Bug Report Composer</h3>
+              <div className="settings-row">
+                <button className="settings-save-btn settings-save-btn--secondary" onClick={() => setBugReportOpen(false)}>
+                  Close
+                </button>
+              </div>
+            </div>
+            <p className="settings-hint settings-report-help">
+              This text is ready to paste into the Channels Community editor. It uses plain text formatting that works with Markdown, BBCode, and HTML-style forum posts.
+            </p>
+            <p className="settings-hint settings-report-help">
+              Add your summary and reproduction steps before posting. The log section is fenced in triple backticks so it stays preformatted.
+            </p>
+            <textarea
+              className="settings-report-editor"
+              value={bugReportDraft}
+              onChange={(e) => setBugReportDraft(e.target.value)}
+              spellCheck={false}
+              aria-label="Bug report draft"
+            />
+            <div className="settings-row settings-row--top-gap settings-report-actions">
+              <button className="settings-save-btn" onClick={() => { void copyBugReportDraft(); }}>
+                Copy To Clipboard
+              </button>
+              <button className="settings-save-btn settings-save-btn--secondary" onClick={() => setBugReportOpen(false)}>
+                Close
+              </button>
+            </div>
+            {reportCopyMessage && <p className="settings-hint settings-hint--ok">{reportCopyMessage}</p>}
+          </div>
+        </div>
+      )}
+
+      {logViewOpen && (
+        <div className="media-modal-backdrop" onClick={() => setLogViewOpen(false)}>
+          <div className="media-modal settings-report-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="media-modal__header">
+              <h3>Client Error Log (last 48 hours)</h3>
+              <button className="media-modal__close" onClick={() => setLogViewOpen(false)}>
+                Close
+              </button>
+            </div>
+            <pre className="settings-log-view">{logViewText}</pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,6 +14,20 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-26 - Local bug report composer with persistent 48-hour client error log
+
+- Request: replace the GitHub-dependent report flow with a local bug report composer suitable for Channels Community posts, and include a persistent client-side error log that retains the last 48 hours.
+- Symptoms discovered:
+  - the prior `Open Bug Report` and `Open Feature Request` actions assumed GitHub authentication.
+  - users had no persistent client log to include alongside server diagnostics when posting to the forum.
+- Solution:
+  - added `src/lib/clientErrorLog.ts` to persist client-side error entries in localStorage, prune entries older than 48 hours, and capture `console.error`, `window.error`, and `unhandledrejection` events.
+  - `main.tsx`: installs client error logging at startup so errors persist across app restarts.
+  - `Settings.tsx`: replaced GitHub issue links with a single `Open Bug Report` action that opens a local editor prefilled with environment details, latest Test Connection output, and the fenced client error log ready for Channels Community.
+  - `Page.css`: added bug-report composer modal and textarea styling consistent with the existing app modal pattern.
+- Validation:
+  - Production build completed successfully.
+
 ### 2026-04-25 - Reusable report template workflow for bug/feature requests
 
 - Request: add a report template that can be used for any bug or feature request and direct users to use it when API compatibility shows unapproved versions.

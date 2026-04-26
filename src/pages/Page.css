@@ -853,6 +853,51 @@
   color: #cf6f6f;
 }
 
+.settings-report-modal {
+  width: min(980px, 100%);
+}
+
+.settings-report-help {
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #9aa7c0;
+}
+
+.settings-report-editor {
+  width: 100%;
+  min-height: 420px;
+  resize: vertical;
+  background: #111726;
+  border: 1px solid #2a3856;
+  border-radius: 8px;
+  color: #dce6fa;
+  font: 12px/1.55 'Cascadia Code', 'Consolas', monospace;
+  padding: 12px 14px;
+  outline: none;
+}
+
+.settings-report-editor:focus {
+  border-color: #4d7fd6;
+}
+
+.settings-report-actions {
+  justify-content: flex-end;
+}
+
+.settings-log-view {
+  margin: 0;
+  padding: 12px 14px;
+  background: #111726;
+  border: 1px solid #2a3856;
+  border-radius: 8px;
+  color: #9ab0d8;
+  font: 12px/1.55 'Cascadia Code', 'Consolas', monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
 /* ── Recordings list sidebar ────────────────────────────────────────────── */
 
 .rec-list {
