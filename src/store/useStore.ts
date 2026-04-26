@@ -3,7 +3,7 @@ import {
   fetchCompatibilityMatrix,
   fetchServerVersionInfo,
   getServerUrl,
-  isVersionApproved,
+  isVersionVerified,
   normalizeServerUrl,
   probeUrl,
   setServerUrl,
@@ -304,7 +304,7 @@ export const useStore = create<AppState>((set) => ({
       return;
     }
 
-    const approved = isVersionApproved(matrix, detected);
+    const approved = isVersionVerified(matrix, detected);
     set({
       apiVersion: detected.serverVersion,
       apiPublicVersion: detected.publicApiVersion,

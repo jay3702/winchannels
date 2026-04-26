@@ -3,7 +3,7 @@
   "entries": [
     {
       "serverVersion": "2026.02.09.1530",
-      "approved": true,
+      "verified": true,
       "notes": "Baseline vetted during WinChannels v1.3.x development"
     }
   ]

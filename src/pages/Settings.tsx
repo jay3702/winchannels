@@ -3,7 +3,7 @@ import { useStore, type ServerOption } from '../store/useStore';
 import {
   fetchCompatibilityMatrix,
   fetchServerVersionInfo,
-  isVersionApproved,
+  isVersionVerified,
   normalizeServerUrl,
   requestFromServer,
   probeUrl,
@@ -78,7 +78,7 @@ interface BuildReportTemplateInput {
 }
 
 function buildReportTemplate(input: BuildReportTemplateInput): string {
-  const compatibility = input.apiVersionApproved ? 'approved' : 'not-approved';
+  const compatibility = input.apiVersionApproved ? 'verified' : 'not-verified';
   const testSummary = input.testResult?.split('\n')[0] ?? 'Not run yet';
   const details = input.testResult ? input.testResult : 'No diagnostic output captured yet.';
 
@@ -293,13 +293,13 @@ export default function Settings() {
           } else if (!matrixAvailable || !matrix) {
             lines.push(`  ⚠ API Version: ${detected.serverVersion} (repository approvals unavailable)`);
             compatibilityIssueCount += 1;
-          } else if (!isVersionApproved(matrix, detected)) {
+          } else if (!isVersionVerified(matrix, detected)) {
             const publicPart = detected.publicApiVersion ? `, public API ${detected.publicApiVersion}` : '';
-            lines.push(`  ⚠ API Version: server ${detected.serverVersion}${publicPart} (not approved in repository yet)`);
+            lines.push(`  ⚠ API Version: server ${detected.serverVersion}${publicPart} (not verified in repository yet)`);
             compatibilityIssueCount += 1;
           } else {
             const publicPart = detected.publicApiVersion ? `, public API ${detected.publicApiVersion}` : '';
-            lines.push(`  ✓ API Version: server ${detected.serverVersion}${publicPart} (approved in repository)`);
+            lines.push(`  ✓ API Version: server ${detected.serverVersion}${publicPart} (verified in repository)`);
           }
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -533,11 +533,11 @@ export default function Settings() {
                 </p>
               )}
               {apiVersionApproved ? (
-                <p className="settings-hint settings-hint--ok">✓ This version pair is approved by the repository compatibility list.</p>
+                <p className="settings-hint settings-hint--ok">✓ This version{apiPublicVersion ? ' pair' : ''} is verified by the repository compatibility list.</p>
               ) : (
                 <>
                   <p className="settings-hint settings-hint--warn">
-                    ⚠ {apiCompatibilityNote ?? 'Detected version is not approved in the repository compatibility list yet.'}
+                    ⚠ {apiCompatibilityNote ?? 'Detected version is not verified in the repository compatibility list yet.'}
                   </p>
                   <p className="settings-hint settings-hint--warn">
                     Please use the report template below to submit a bug or feature request with your diagnostics.
@@ -565,7 +565,7 @@ export default function Settings() {
           </div>
           {reportCopyMessage && <p className="settings-hint settings-hint--ok">{reportCopyMessage}</p>}
           <p className="settings-hint">
-            Use this for any bug report or feature request. When API compatibility is unapproved, include the latest Test Connection output in your report.
+            Use this for any bug report or feature request. When API compatibility is unverified, include the latest Test Connection output in your report.
           </p>
         </section>
 
