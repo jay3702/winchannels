@@ -251,10 +251,7 @@ export const useStore = create<AppState>((set) => ({
       const tailscaleReachable = await probeUrl(active.tailscaleUrl);
       if (tailscaleReachable) {
         setServerUrl(active.tailscaleUrl);
-        set((state) => ({
-          serverUrl: normalizeServerUrl(active.tailscaleUrl!),
-          serverChangeVersion: state.serverChangeVersion + 1,
-        }));
+        set({ serverUrl: normalizeServerUrl(active.tailscaleUrl!) });
         resolvedUrl = normalizeServerUrl(active.tailscaleUrl);
         reachable = true;
         console.info(`[Network] LAN unreachable; switched to Tailscale URL for "${active.name}"`);
