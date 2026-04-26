@@ -12,7 +12,6 @@ export interface ServerVersionInfo {
 
 export interface CompatibilityMatrixEntry {
   serverVersion: string;
-  publicApiVersion?: string;
   verified: boolean;
   notes?: string;
 }
@@ -242,9 +241,6 @@ export async function fetchCompatibilityMatrix(): Promise<CompatibilityMatrixFil
       .filter((entry) => entry && typeof entry === 'object')
       .map((entry) => ({
         serverVersion: String((entry as { serverVersion?: unknown }).serverVersion ?? '').trim(),
-        ...(String((entry as { publicApiVersion?: unknown }).publicApiVersion ?? '').trim()
-          ? { publicApiVersion: String((entry as { publicApiVersion?: unknown }).publicApiVersion).trim() }
-          : {}),
         verified: Boolean((entry as { verified?: unknown }).verified),
         ...(String((entry as { notes?: unknown }).notes ?? '').trim()
           ? { notes: String((entry as { notes?: unknown }).notes).trim() }
@@ -262,10 +258,5 @@ export function isVersionVerified(
   detected: ServerVersionInfo,
 ): boolean {
   if (!detected.serverVersion) return false;
-  return matrix.entries.some((entry) => {
-    if (!entry.verified) return false;
-    if (entry.serverVersion !== detected.serverVersion) return false;
-    if (!entry.publicApiVersion) return true;
-    return entry.publicApiVersion === (detected.publicApiVersion ?? '');
-  });
+  return matrix.entries.some((entry) => entry.verified && entry.serverVersion === detected.serverVersion);
 }

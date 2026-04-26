@@ -533,7 +533,7 @@ export default function Settings() {
                 </p>
               )}
               {apiVersionApproved ? (
-                <p className="settings-hint settings-hint--ok">✓ This version{apiPublicVersion ? ' pair' : ''} is verified by the repository compatibility list.</p>
+                <p className="settings-hint settings-hint--ok">✓ This server version is verified by the repository compatibility list.</p>
               ) : (
                 <>
                   <p className="settings-hint settings-hint--warn">
