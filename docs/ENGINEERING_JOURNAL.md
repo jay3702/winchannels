@@ -14,6 +14,84 @@ This file adds the decision context that is usually missing from commit messages
 
 ## Unreleased
 
+### 2026-04-25 - Reusable report template workflow for bug/feature requests
+
+- Request: add a report template that can be used for any bug or feature request and direct users to use it when API compatibility shows unapproved versions.
+- Symptoms discovered:
+  - users had no guided way to package diagnostics for compatibility mismatches.
+  - incompatibility warnings lacked a direct action path for reporting findings.
+- Solution:
+  - `Settings.tsx`: added a `Report Template` section with:
+    - `Copy Report Template` (clipboard)
+    - `Open Bug Report` (prefilled GitHub issue)
+    - `Open Feature Request` (prefilled GitHub issue)
+  - Template now includes app version, active server info, detected internal/public API versions, compatibility state, and latest Test Connection output.
+  - API Compatibility warning now explicitly directs users to use the report template when the detected version is not approved.
+- Validation:
+  - TypeScript diagnostics clean for modified file.
+  - Production build completed successfully.
+
+### 2026-04-25 - Repository-hosted API compatibility approvals (server + public API versions)
+
+- Request: move compatibility approvals from client-local state to the repository, track both server and public API version numbers, keep warnings non-blocking, and improve confusing compatibility messaging.
+- Symptoms discovered:
+  - local per-server approval wording (`not yet approved for this server`) was confusing.
+  - API Compatibility section could still show `Connect to a server first` even after Test Connection checks.
+  - write actions were blocked on version mismatch, conflicting with desired warn-only policy.
+- Solution:
+  - Added `.github/api-version-compatibility.json` as a repository-managed approval matrix with entries for `serverVersion`, optional `publicApiVersion`, and `approved`.
+  - `client.ts`: added status parsing for both internal server version and public API version; added repository matrix fetch and version-pair approval matcher.
+  - `useStore.ts`: replaced localStorage approval logic with repository matrix checks; now stores detected `apiVersion` + `apiPublicVersion` and a compatibility note.
+  - `Settings.tsx`: Test Connection now evaluates versions against repository approvals and reports clearer per-server results (`approved in repository`, `not approved in repository yet`, or approvals unavailable).
+  - `Settings.tsx`: API Compatibility messaging updated to clarify active-server detection and repository approval status; About section now also shows newer client version notice with releases link.
+  - `Movies.tsx`, `RecentRecordings.tsx`, `TVShows.tsx`: removed hard mutation blocks on unapproved version; behavior is warning-only.
+  - `App.tsx`: updated top warning banner copy to reflect non-blocking caution.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+  - Production build completed successfully after removing an unused selector.
+
+### 2026-04-25 - Test Connection now reports per-server API compatibility
+
+- Request: make the Settings `Test Connection` button check API version on each configured server and report compatibility problems individually.
+- Symptoms discovered:
+  - Connection test only reported endpoint reachability/counts and did not evaluate API version compatibility per server.
+  - Users with multiple servers needed server-by-server confirmation of version approval mismatches.
+- Solution:
+  - `Settings.tsx`: added per-server `/api/v1/status` checks during Test Connection.
+  - Extracted reported API version (`version`/`Version`/`build`) and compared it to the stored approved version for each server id.
+  - Output now shows one of: approved version, not-yet-approved version, version mismatch, or missing version field for each server.
+  - Test summary now includes total compatibility issue count in addition to reachability.
+- Validation:
+  - TypeScript diagnostics clean for modified file.
+
+### 2026-04-25 - Status endpoint fallback for API version detection
+
+- Request: user reported Test Connection showing `0/N reachable` due to `404 GET /api/v1/status` on otherwise reachable servers.
+- Symptoms discovered:
+  - Test Connection grouped `/api/v1/status` into the same `Promise.all` as episodes/movies/shows, so a status 404 failed the entire server connectivity check.
+  - Version detection and probe logic assumed `/api/v1/status` existed on all server variants.
+- Solution:
+  - `Settings.tsx`: decoupled connectivity checks from version checks; reachability now comes from content endpoints, while version uses `fetchServerVersion` separately.
+  - `client.ts`: added status endpoint fallback candidates (`/api/v1/status`, `/api/status`, `/status`) for both probe and version detection.
+  - Compatibility output now flags undetected version as a per-server compatibility warning rather than reporting the server as unreachable.
+- Validation:
+  - TypeScript diagnostics clean for modified files.
+  - Production build completed successfully.
+
+### 2026-04-25 - API compatibility probe reliability across multi-port servers
+
+- Request: investigate odd API compatibility behavior reported on a setup with multiple DVR servers sharing one IP but using different ports.
+- Symptoms discovered:
+  - API compatibility probe in `App.tsx` only reran when `activeServerId` changed.
+  - Editing active server URL/port could leave compatibility state stale (`Version not yet detected` or prior value) until a full server switch/restart.
+  - Async probe completion could apply version results to the wrong active server if selection changed during the request.
+- Solution:
+  - `App.tsx`: made startup/server probe effect depend on both `activeServerId` and `serverChangeVersion` so URL/port edits trigger a fresh version probe.
+  - `useStore.ts`: captured probe target server id, ignored stale async results when active server changed mid-probe, and reset compatibility state when detection fails or server context changes.
+  - `useStore.ts`: reset `apiVersion`/`apiVersionApproved` on active server change and server URL updates to avoid stale display.
+- Validation:
+  - TypeScript diagnostics clean for modified files (`App.tsx`, `useStore.ts`).
+
 ### 2026-04-24 - Startup check for newer WinChannels release
 
 - Request: check on startup whether a newer app version exists.

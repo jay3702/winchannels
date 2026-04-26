@@ -141,7 +141,6 @@ export default function TVShows() {
   const [searchParams, setSearchParams] = useSearchParams();
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
-  const apiVersionApproved = useStore((s) => s.apiVersionApproved);
   const { width: sidebarWidth, isResizing, handleMouseDown } = useResizableSidebar({
     initialWidth: 220,
     minWidth: 180,
@@ -313,10 +312,6 @@ export default function TVShows() {
   }
 
   async function toggleWatched(episode: Episode) {
-    if (!apiVersionApproved) {
-      setEpError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
-      return;
-    }
     const nextWatched = !episode.watched;
     const previous = episodes;
 
@@ -350,10 +345,6 @@ export default function TVShows() {
   }
 
   async function handleTrashEpisode(episode: Episode) {
-    if (!apiVersionApproved) {
-      setEpError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
-      return;
-    }
     try {
       await trashRecording(episode.id);
       setEpisodes((list) => list.filter((ep) => ep.id !== episode.id));
@@ -365,10 +356,6 @@ export default function TVShows() {
   }
 
   async function handleMarkNotRecorded(episode: Episode) {
-    if (!apiVersionApproved) {
-      setEpError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
-      return;
-    }
     const programId = episode.program_id;
     if (!programId) {
       setEpError('Cannot mark as not recorded: program_id is missing.');

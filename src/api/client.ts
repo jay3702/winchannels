@@ -2,6 +2,25 @@
 // Server URL is read from localStorage so Settings page can update it.
 
 const DEFAULT_SERVER = 'http://localhost:8089';
+const STATUS_PATH_CANDIDATES = ['/api/v1/status', '/api/status', '/status'] as const;
+const COMPAT_MATRIX_PATH = '.github/api-version-compatibility.json';
+
+export interface ServerVersionInfo {
+  serverVersion: string | null;
+  publicApiVersion: string | null;
+}
+
+export interface CompatibilityMatrixEntry {
+  serverVersion: string;
+  publicApiVersion?: string;
+  approved: boolean;
+  notes?: string;
+}
+
+export interface CompatibilityMatrixFile {
+  schemaVersion: number;
+  entries: CompatibilityMatrixEntry[];
+}
 
 /**
  * Normalize a server URL: add http:// scheme if missing, fix single-slash
@@ -29,15 +48,23 @@ export function setServerUrl(url: string): void {
 
 /**
  * Returns true if the server at `url` responds within `timeoutMs`.
- * Uses the lightweight GET /api/v1/status endpoint.
+ * Uses lightweight status endpoint candidates.
  * Any HTTP response (even 4xx) counts as reachable — only a network error or
  * timeout counts as unreachable.
  */
 export async function probeUrl(url: string, timeoutMs = 2500): Promise<boolean> {
   const normalized = normalizeServerUrl(url);
-  const fetchProbe = httpFetch(`${normalized}/api/v1/status`)
-    .then(() => true)
-    .catch(() => false);
+  const fetchProbe = (async () => {
+    for (const path of STATUS_PATH_CANDIDATES) {
+      try {
+        await httpFetch(`${normalized}${path}`);
+        return true;
+      } catch {
+        // Try next candidate.
+      }
+    }
+    return false;
+  })();
   const timeout = new Promise<false>((resolve) => setTimeout(() => resolve(false), timeoutMs));
   return Promise.race([fetchProbe, timeout]);
 }
@@ -50,6 +77,26 @@ async function httpFetch(url: string, init?: RequestInit): Promise<Response> {
     return tauriFetch(url, init);
   }
   return fetch(url, init);
+}
+
+function extractVersionInfo(status: Record<string, unknown>): ServerVersionInfo {
+  const serverRaw = status['version'] ?? status['Version'] ?? status['build'] ?? null;
+  const publicRaw = status['api_version'] ?? status['apiVersion'] ?? status['public_api_version'] ?? status['publicApiVersion'] ?? null;
+  return {
+    serverVersion: typeof serverRaw === 'string' && serverRaw.trim().length > 0 ? serverRaw.trim() : null,
+    publicApiVersion: typeof publicRaw === 'string' && publicRaw.trim().length > 0 ? publicRaw.trim() : null,
+  };
+}
+
+function repositoryRawCompatibilityUrl(): string {
+  // __APP_REPOSITORY_URL__ is expected to be like https://github.com/<owner>/<repo>
+  const match = __APP_REPOSITORY_URL__.match(/github\.com\/([^/]+)\/([^/]+)/i);
+  if (!match) {
+    return `https://raw.githubusercontent.com/jay3702/winchannels/main/${COMPAT_MATRIX_PATH}`;
+  }
+  const owner = match[1];
+  const repo = match[2].replace(/\.git$/i, '');
+  return `https://raw.githubusercontent.com/${owner}/${repo}/main/${COMPAT_MATRIX_PATH}`;
 }
 
 export async function requestFromServer<T>(
@@ -158,16 +205,67 @@ export function previewUrl(fileId: string): string {
 // ── Server version ────────────────────────────────────────────────────────
 
 /**
- * Fetch the version string from /api/v1/status.
- * Returns the version on success, null if the endpoint is unreachable or the
- * response does not include a recognisable version field.
+ * Fetch version details from available status endpoints.
+ * Returns null when status endpoints are unavailable.
  */
+export async function fetchServerVersionInfo(serverUrl: string): Promise<ServerVersionInfo | null> {
+  for (const path of STATUS_PATH_CANDIDATES) {
+    try {
+      const data = await requestFromServer<Record<string, unknown>>(serverUrl, path);
+      const info = extractVersionInfo(data);
+      if (info.serverVersion || info.publicApiVersion) return info;
+    } catch {
+      // Try next candidate.
+    }
+  }
+  return null;
+}
+
 export async function fetchServerVersion(serverUrl: string): Promise<string | null> {
+  const info = await fetchServerVersionInfo(serverUrl);
+  return info?.serverVersion ?? null;
+}
+
+export async function fetchCompatibilityMatrix(): Promise<CompatibilityMatrixFile | null> {
   try {
-    const data = await requestFromServer<Record<string, unknown>>(serverUrl, '/api/v1/status');
-    const v = data['version'] ?? data['Version'] ?? data['build'] ?? null;
-    return typeof v === 'string' && v.length > 0 ? v : null;
+    const response = await httpFetch(repositoryRawCompatibilityUrl(), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as unknown;
+    if (!payload || typeof payload !== 'object') return null;
+    const schemaVersion = Number((payload as { schemaVersion?: unknown }).schemaVersion ?? 1);
+    const rawEntries = (payload as { entries?: unknown }).entries;
+    if (!Array.isArray(rawEntries)) return null;
+    const entries: CompatibilityMatrixEntry[] = rawEntries
+      .filter((entry) => entry && typeof entry === 'object')
+      .map((entry) => ({
+        serverVersion: String((entry as { serverVersion?: unknown }).serverVersion ?? '').trim(),
+        ...(String((entry as { publicApiVersion?: unknown }).publicApiVersion ?? '').trim()
+          ? { publicApiVersion: String((entry as { publicApiVersion?: unknown }).publicApiVersion).trim() }
+          : {}),
+        approved: Boolean((entry as { approved?: unknown }).approved),
+        ...(String((entry as { notes?: unknown }).notes ?? '').trim()
+          ? { notes: String((entry as { notes?: unknown }).notes).trim() }
+          : {}),
+      }))
+      .filter((entry) => entry.serverVersion.length > 0);
+    return { schemaVersion, entries };
   } catch {
     return null;
   }
+}
+
+export function isVersionApproved(
+  matrix: CompatibilityMatrixFile,
+  detected: ServerVersionInfo,
+): boolean {
+  if (!detected.serverVersion) return false;
+  return matrix.entries.some((entry) => {
+    if (!entry.approved) return false;
+    if (entry.serverVersion !== detected.serverVersion) return false;
+    if (!entry.publicApiVersion) return true;
+    return entry.publicApiVersion === (detected.publicApiVersion ?? '');
+  });
 }

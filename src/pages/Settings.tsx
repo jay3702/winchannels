@@ -1,10 +1,121 @@
 import { useEffect, useState } from 'react';
 import { useStore, type ServerOption } from '../store/useStore';
-import { normalizeServerUrl, requestFromServer, probeUrl } from '../api/client';
+import {
+  fetchCompatibilityMatrix,
+  fetchServerVersionInfo,
+  isVersionApproved,
+  normalizeServerUrl,
+  requestFromServer,
+  probeUrl,
+} from '../api/client';
 import './Page.css';
 
 function makeServerId(): string {
   return `srv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+interface UpdateInfo {
+  latestVersion: string;
+  latestUrl: string;
+}
+
+type ReportKind = 'bug' | 'feature';
+
+function parseVersionParts(version: string): number[] {
+  return version
+    .replace(/^v/i, '')
+    .split(/[.-]/)
+    .map((part) => Number.parseInt(part, 10))
+    .map((value) => (Number.isFinite(value) ? value : 0));
+}
+
+function isVersionNewer(latest: string, current: string): boolean {
+  const a = parseVersionParts(latest);
+  const b = parseVersionParts(current);
+  const maxLen = Math.max(a.length, b.length);
+  for (let i = 0; i < maxLen; i += 1) {
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    if (av > bv) return true;
+    if (av < bv) return false;
+  }
+  return false;
+}
+
+async function fetchLatestRelease(): Promise<UpdateInfo | null> {
+  try {
+    const response = await fetch('https://api.github.com/repos/jay3702/winchannels/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as {
+      tag_name?: string;
+      html_url?: string;
+    };
+    const latestVersion = String(payload.tag_name ?? '').trim();
+    const latestUrl = String(payload.html_url ?? '').trim();
+    if (!latestVersion || !latestUrl) return null;
+    return { latestVersion, latestUrl };
+  } catch {
+    return null;
+  }
+}
+
+function buildIssueUrl(title: string, body: string): string {
+  const base = `${__APP_REPOSITORY_URL__.replace(/\/+$/, '')}/issues/new`;
+  const params = new URLSearchParams({ title, body });
+  return `${base}?${params.toString()}`;
+}
+
+interface BuildReportTemplateInput {
+  activeServerName: string;
+  activeServerUrl: string;
+  apiVersion: string | null;
+  apiPublicVersion: string | null;
+  apiVersionApproved: boolean;
+  apiCompatibilityNote: string | null;
+  testResult: string | null;
+}
+
+function buildReportTemplate(input: BuildReportTemplateInput): string {
+  const compatibility = input.apiVersionApproved ? 'approved' : 'not-approved';
+  const testSummary = input.testResult?.split('\n')[0] ?? 'Not run yet';
+  const details = input.testResult ? input.testResult : 'No diagnostic output captured yet.';
+
+  return [
+    '# WinChannels Report',
+    '',
+    '## Category',
+    '- [ ] Bug report',
+    '- [ ] Feature request',
+    '',
+    '## Summary',
+    '<Describe the problem or feature request>',
+    '',
+    '## Environment',
+    `- WinChannels version: ${__APP_VERSION__}`,
+    `- Active server: ${input.activeServerName}`,
+    `- Active server URL: ${input.activeServerUrl}`,
+    `- Internal server version: ${input.apiVersion ?? 'not detected'}`,
+    `- Public API version: ${input.apiPublicVersion ?? 'not detected'}`,
+    `- Compatibility status: ${compatibility}`,
+    `- Compatibility note: ${input.apiCompatibilityNote ?? 'none'}`,
+    '',
+    '## API Compatibility Diagnostics',
+    `- Last Test Connection summary: ${testSummary}`,
+    '',
+    '```text',
+    details,
+    '```',
+    '',
+    '## Steps To Reproduce / Requested Behavior',
+    '1. <Step one>',
+    '2. <Step two>',
+    '3. <Expected vs actual>',
+    '',
+    '## Additional Notes',
+    '- <Optional screenshots/logs/context>',
+  ].join('\n');
 }
 
 function areSameServers(a: ServerOption[], b: ServerOption[]): boolean {
@@ -28,8 +139,9 @@ export default function Settings() {
     showHiddenLiveChannels,
     setShowHiddenLiveChannels,
     apiVersion,
+    apiPublicVersion,
     apiVersionApproved,
-    approveApiVersion,
+    apiCompatibilityNote,
   } = useStore();
   const [draftServers, setDraftServers] = useState<ServerOption[]>(servers);
   const [shareDraft, setShareDraft] = useState(storageSharePath);
@@ -37,10 +149,22 @@ export default function Settings() {
   const [serverSaveError, setServerSaveError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [reportCopyMessage, setReportCopyMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setDraftServers(servers);
   }, [servers]);
+
+  useEffect(() => {
+    void (async () => {
+      const latest = await fetchLatestRelease();
+      if (!latest) return;
+      if (isVersionNewer(latest.latestVersion, __APP_VERSION__)) {
+        setUpdateInfo(latest);
+      }
+    })();
+  }, []);
 
   function updateServer(serverId: string, field: 'name' | 'url' | 'tailscaleUrl', value: string) {
     setDraftServers((prev) =>
@@ -129,7 +253,10 @@ export default function Settings() {
     setTestResult(null);
     try {
       const lines: string[] = [];
-      let okCount = 0;
+      let connectivityPassCount = 0;
+      let compatibilityIssueCount = 0;
+      const matrix = await fetchCompatibilityMatrix();
+      const matrixAvailable = Boolean(matrix);
 
       for (const server of validatedServers) {
         // Determine which URL to test: probe LAN, fall back to Tailscale
@@ -155,24 +282,80 @@ export default function Settings() {
             : `bad format -> ${JSON.stringify(episodes).slice(0, 80)}`;
           const mv = Array.isArray(movies) ? movies.length : 'bad format';
           const sh = Array.isArray(shows) ? shows.length : 'bad format';
+          const detected = await fetchServerVersionInfo(testUrl);
 
           lines.push(`  ✓ Episodes: ${ep}  Movies: ${mv}  Shows: ${sh}`);
-          okCount += 1;
+          connectivityPassCount += 1;
+
+          if (!detected?.serverVersion) {
+            lines.push('  ⚠ API Version: unable to detect from status endpoints');
+            compatibilityIssueCount += 1;
+          } else if (!matrixAvailable || !matrix) {
+            lines.push(`  ⚠ API Version: ${detected.serverVersion} (repository approvals unavailable)`);
+            compatibilityIssueCount += 1;
+          } else if (!isVersionApproved(matrix, detected)) {
+            const publicPart = detected.publicApiVersion ? `, public API ${detected.publicApiVersion}` : '';
+            lines.push(`  ⚠ API Version: server ${detected.serverVersion}${publicPart} (not approved in repository yet)`);
+            compatibilityIssueCount += 1;
+          } else {
+            const publicPart = detected.publicApiVersion ? `, public API ${detected.publicApiVersion}` : '';
+            lines.push(`  ✓ API Version: server ${detected.serverVersion}${publicPart} (approved in repository)`);
+          }
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           lines.push(`  ✗ ${msg}`);
+          compatibilityIssueCount += 1;
         }
         lines.push('');
       }
 
-      const allOk = okCount === validatedServers.length;
-      const header = allOk
-        ? `✓ Server checks complete (${okCount}/${validatedServers.length} passed)`
-        : `✗ Server checks complete (${okCount}/${validatedServers.length} passed)`;
+      const allConnectionsOk = connectivityPassCount === validatedServers.length;
+      const header = allConnectionsOk
+        ? compatibilityIssueCount === 0
+          ? `✓ Server checks complete (${connectivityPassCount}/${validatedServers.length} reachable, 0 compatibility issues)`
+          : `⚠ Server checks complete (${connectivityPassCount}/${validatedServers.length} reachable, ${compatibilityIssueCount} compatibility issue${compatibilityIssueCount === 1 ? '' : 's'})`
+        : `✗ Server checks complete (${connectivityPassCount}/${validatedServers.length} reachable, ${compatibilityIssueCount} compatibility issue${compatibilityIssueCount === 1 ? '' : 's'})`;
       setTestResult([header, '', ...lines].join('\n').trim());
     } finally {
       setTesting(false);
     }
+  }
+
+  async function copyReportTemplate() {
+    const active = servers.find((server) => server.id === useStore.getState().activeServerId) ?? servers[0];
+    const template = buildReportTemplate({
+      activeServerName: active?.name ?? 'Unknown',
+      activeServerUrl: active?.url ?? 'Unknown',
+      apiVersion,
+      apiPublicVersion,
+      apiVersionApproved,
+      apiCompatibilityNote,
+      testResult,
+    });
+    try {
+      await navigator.clipboard.writeText(template);
+      setReportCopyMessage('Report template copied to clipboard.');
+    } catch {
+      setReportCopyMessage('Unable to copy automatically. You can still use the prefilled links below.');
+    }
+    setTimeout(() => setReportCopyMessage(null), 3500);
+  }
+
+  function buildIssueLink(kind: ReportKind): string {
+    const active = servers.find((server) => server.id === useStore.getState().activeServerId) ?? servers[0];
+    const template = buildReportTemplate({
+      activeServerName: active?.name ?? 'Unknown',
+      activeServerUrl: active?.url ?? 'Unknown',
+      apiVersion,
+      apiPublicVersion,
+      apiVersionApproved,
+      apiCompatibilityNote,
+      testResult,
+    });
+    return buildIssueUrl(
+      kind === 'bug' ? '[Bug] WinChannels report' : '[Feature] WinChannels request',
+      template,
+    );
   }
 
   return (
@@ -344,23 +527,46 @@ export default function Settings() {
               <p className="settings-hint">
                 Detected server version: <strong>{apiVersion}</strong>
               </p>
+              {apiPublicVersion && (
+                <p className="settings-hint">
+                  Detected public API version: <strong>{apiPublicVersion}</strong>
+                </p>
+              )}
               {apiVersionApproved ? (
-                <p className="settings-hint settings-hint--ok">✓ This version is approved. Write actions are enabled.</p>
+                <p className="settings-hint settings-hint--ok">✓ This version pair is approved by the repository compatibility list.</p>
               ) : (
                 <>
                   <p className="settings-hint settings-hint--warn">
-                    ⚠ The server was updated to <strong>{apiVersion}</strong>. Write actions (mark watched, etc.) are
-                    blocked until you confirm the API is still compatible with this app.
+                    ⚠ {apiCompatibilityNote ?? 'Detected version is not approved in the repository compatibility list yet.'}
                   </p>
-                  <button className="settings-save-btn" onClick={approveApiVersion}>
-                    Approve v{apiVersion}
-                  </button>
+                  <p className="settings-hint settings-hint--warn">
+                    Please use the report template below to submit a bug or feature request with your diagnostics.
+                  </p>
                 </>
               )}
             </>
           ) : (
-            <p className="settings-hint">Version not yet detected. Connect to a server first.</p>
+            <p className="settings-hint">Active server version not detected yet. Use Test Connection to inspect all configured servers.</p>
           )}
+        </section>
+
+        <section className="settings-section">
+          <h2 className="settings-section__title">Report Template</h2>
+          <div className="settings-row">
+            <button className="settings-save-btn" onClick={() => { void copyReportTemplate(); }}>
+              Copy Report Template
+            </button>
+            <a className="settings-save-btn settings-save-btn--secondary" href={buildIssueLink('bug')} target="_blank" rel="noreferrer">
+              Open Bug Report
+            </a>
+            <a className="settings-save-btn settings-save-btn--secondary" href={buildIssueLink('feature')} target="_blank" rel="noreferrer">
+              Open Feature Request
+            </a>
+          </div>
+          {reportCopyMessage && <p className="settings-hint settings-hint--ok">{reportCopyMessage}</p>}
+          <p className="settings-hint">
+            Use this for any bug report or feature request. When API compatibility is unapproved, include the latest Test Connection output in your report.
+          </p>
         </section>
 
         <section className="settings-section">
@@ -371,6 +577,12 @@ export default function Settings() {
           <p className="settings-hint settings-hint--about">
             Repository: <a className="settings-link" href={__APP_REPOSITORY_URL__} target="_blank" rel="noreferrer">{__APP_REPOSITORY_URL__}</a>
           </p>
+          {updateInfo && (
+            <p className="settings-hint settings-hint--warn settings-hint--about">
+              New WinChannels client version available: <strong>{updateInfo.latestVersion}</strong>.{' '}
+              <a className="settings-link" href={updateInfo.latestUrl} target="_blank" rel="noreferrer">Open releases</a>
+            </p>
+          )}
         </section>
       </div>
     </div>

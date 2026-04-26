@@ -1,5 +1,13 @@
 import { create } from 'zustand';
-import { getServerUrl, normalizeServerUrl, setServerUrl, probeUrl, fetchServerVersion } from '../api/client';
+import {
+  fetchCompatibilityMatrix,
+  fetchServerVersionInfo,
+  getServerUrl,
+  isVersionApproved,
+  normalizeServerUrl,
+  probeUrl,
+  setServerUrl,
+} from '../api/client';
 
 const SHARE_KEY = 'dvr_storage_share';
 const SERVERS_KEY = 'dvr_servers';
@@ -7,7 +15,6 @@ const ACTIVE_SERVER_KEY = 'dvr_active_server_id';
 const PLAYBACK_REMUX_KEY = 'playback_prefer_remux';
 const DIAGNOSTICS_ENABLED_KEY = 'diagnostics_enabled';
 const LIVE_SHOW_HIDDEN_KEY = 'live_show_hidden_channels';
-const API_VERSIONS_KEY = 'dvr_api_approved_versions';
 
 export interface ServerOption {
   id: string;
@@ -20,22 +27,6 @@ export interface ServerOption {
 
 function makeServerId(): string {
   return `srv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function loadApprovedVersions(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(API_VERSIONS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    return parsed as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-function saveApprovedVersions(versions: Record<string, string>): void {
-  localStorage.setItem(API_VERSIONS_KEY, JSON.stringify(versions));
 }
 
 function parseServers(raw: string | null): ServerOption[] {
@@ -98,12 +89,14 @@ export interface AppState {
   /** Probe the active server's LAN URL; if unreachable and a Tailscale URL is configured, switch to it. */
   probeActiveServer: () => Promise<void>;
 
-  /** Version string last reported by the active server's /api/v1/status endpoint. */
+  /** Internal server version string reported by the active server status endpoint. */
   apiVersion: string | null;
-  /** True when the detected server version matches the last user-approved version. */
+  /** Public API version string reported by the active server status endpoint. */
+  apiPublicVersion: string | null;
+  /** True when the detected version pair matches the repository approval matrix. */
   apiVersionApproved: boolean;
-  /** Record the current detected version as approved, re-enabling write actions. */
-  approveApiVersion: () => void;
+  /** Additional compatibility status context for UI. */
+  apiCompatibilityNote: string | null;
 
   // UNC / local path to the root of the DVR storage share, e.g.
   // e.g. \\192.168.x.x\AllMedia\Channels  — used to find SRT sidecar files.
@@ -146,7 +139,9 @@ export const useStore = create<AppState>((set) => ({
   serverUrl: bootActive.url,
   serverChangeVersion: 0,
   apiVersion: null,
-  apiVersionApproved: true, // assume approved until a version change is detected
+  apiPublicVersion: null,
+  apiVersionApproved: true,
+  apiCompatibilityNote: null,
 
   setActiveServer: (id: string) => {
     set((state) => {
@@ -157,6 +152,10 @@ export const useStore = create<AppState>((set) => ({
         activeServerId: next.id,
         serverUrl: next.url,
         serverChangeVersion: state.serverChangeVersion + 1,
+        apiVersion: null,
+        apiPublicVersion: null,
+        apiVersionApproved: true,
+        apiCompatibilityNote: null,
         nowPlayingId: null,
         nowPlayingTitle: '',
         nowPlayingFilePath: '',
@@ -191,6 +190,10 @@ export const useStore = create<AppState>((set) => ({
         activeServerId: active.id,
         serverUrl: active.url,
         serverChangeVersion: state.serverChangeVersion + 1,
+        apiVersion: null,
+        apiPublicVersion: null,
+        apiVersionApproved: true,
+        apiCompatibilityNote: null,
         nowPlayingId: null,
         nowPlayingTitle: '',
         nowPlayingFilePath: '',
@@ -214,6 +217,10 @@ export const useStore = create<AppState>((set) => ({
         servers: updatedServers,
         serverUrl: normalized,
         serverChangeVersion: state.serverChangeVersion + 1,
+        apiVersion: null,
+        apiPublicVersion: null,
+        apiVersionApproved: true,
+        apiCompatibilityNote: null,
         nowPlayingId: null,
         nowPlayingTitle: '',
         nowPlayingFilePath: '',
@@ -227,7 +234,8 @@ export const useStore = create<AppState>((set) => ({
 
   probeActiveServer: async () => {
     const { servers, activeServerId } = useStore.getState();
-    const active = servers.find((s) => s.id === activeServerId);
+    const targetServerId = activeServerId;
+    const active = servers.find((s) => s.id === targetServerId);
     if (!active) return;
 
     let resolvedUrl = normalizeServerUrl(active.url);
@@ -256,35 +264,55 @@ export const useStore = create<AppState>((set) => ({
     if (!reachable) {
       // Neither URL responded — keep the configured LAN URL (connection will surface its own error)
       setServerUrl(active.url);
-      set({ serverUrl: normalizeServerUrl(active.url) });
+      if (useStore.getState().activeServerId === targetServerId) {
+        set({
+          serverUrl: normalizeServerUrl(active.url),
+          apiVersion: null,
+          apiPublicVersion: null,
+          apiVersionApproved: true,
+          apiCompatibilityNote: null,
+        });
+      }
       return;
     }
 
-    // Version check: compare detected version against the user-approved version for this server.
-    const detected = await fetchServerVersion(resolvedUrl);
-    if (detected) {
-      const currentServerId = useStore.getState().activeServerId;
-      const approvedVersions = loadApprovedVersions();
-      const approvedVersion = approvedVersions[currentServerId];
-      if (!approvedVersion) {
-        // First time connecting to this server — auto-approve the current version.
-        saveApprovedVersions({ ...approvedVersions, [currentServerId]: detected });
-        set({ apiVersion: detected, apiVersionApproved: true });
-      } else if (approvedVersion === detected) {
-        set({ apiVersion: detected, apiVersionApproved: true });
-      } else {
-        set({ apiVersion: detected, apiVersionApproved: false });
-      }
+    const detected = await fetchServerVersionInfo(resolvedUrl);
+    if (useStore.getState().activeServerId !== targetServerId) {
+      return;
     }
-  },
+    if (!detected || !detected.serverVersion) {
+      set({
+        apiVersion: null,
+        apiPublicVersion: detected?.publicApiVersion ?? null,
+        apiVersionApproved: true,
+        apiCompatibilityNote: 'Unable to detect the active server version from status endpoints.',
+      });
+      return;
+    }
 
-  approveApiVersion: () => {
-    const { apiVersion, activeServerId } = useStore.getState();
-    if (!apiVersion) return;
-    const versions = loadApprovedVersions();
-    versions[activeServerId] = apiVersion;
-    saveApprovedVersions(versions);
-    set({ apiVersionApproved: true });
+    const matrix = await fetchCompatibilityMatrix();
+    if (useStore.getState().activeServerId !== targetServerId) {
+      return;
+    }
+    if (!matrix) {
+      set({
+        apiVersion: detected.serverVersion,
+        apiPublicVersion: detected.publicApiVersion,
+        apiVersionApproved: false,
+        apiCompatibilityNote: 'Compatibility approvals could not be loaded from the repository.',
+      });
+      return;
+    }
+
+    const approved = isVersionApproved(matrix, detected);
+    set({
+      apiVersion: detected.serverVersion,
+      apiPublicVersion: detected.publicApiVersion,
+      apiVersionApproved: approved,
+      apiCompatibilityNote: approved
+        ? null
+        : 'Detected version is not approved in the repository compatibility list yet.',
+    });
   },
 
   storageSharePath: localStorage.getItem(SHARE_KEY) ?? '',

@@ -91,7 +91,6 @@ export default function Movies() {
   const [visibleMovieCount, setVisibleMovieCount] = useState(INITIAL_VISIBLE_MOVIES);
   const serverChangeVersion = useStore((s) => s.serverChangeVersion);
   const playItem = useStore((s) => s.playItem);
-  const apiVersionApproved = useStore((s) => s.apiVersionApproved);
   const [searchParams] = useSearchParams();
   const requestedMovieId = searchParams.get('movieId');
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -175,10 +174,6 @@ export default function Movies() {
   }, [sortedDisplayed, visibleMovieCount]);
 
   async function toggleWatched(movie: Movie) {
-    if (!apiVersionApproved) {
-      setActionError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
-      return;
-    }
     const nextWatched = !movie.watched;
     const previous = movies;
 

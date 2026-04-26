@@ -60,7 +60,7 @@ async function fetchLatestRelease(): Promise<UpdateInfo | null> {
 }
 
 function App() {
-  const { activeServerId, probeActiveServer, apiVersionApproved } = useStore();
+  const { activeServerId, serverChangeVersion, probeActiveServer, apiVersionApproved } = useStore();
   const [probing, setProbing] = useState(true);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const didCheckUpdateRef = useRef(false);
@@ -72,7 +72,7 @@ function App() {
   useEffect(() => {
     setProbing(true);
     probeActiveServer().finally(() => setProbing(false));
-  }, [activeServerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeServerId, serverChangeVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (didCheckUpdateRef.current) return;
@@ -108,7 +108,7 @@ function App() {
           )}
           {!probing && !apiVersionApproved && (
             <div className="api-version-banner" role="alert">
-              <span>⚠ Server software was updated. Write actions are blocked until you review and approve the new version.</span>
+              <span>⚠ Server/API version changed and is not yet approved in the repository compatibility list. Continue with caution.</span>
               <Link to="/settings" className="api-version-banner__link">Review in Settings</Link>
             </div>
           )}

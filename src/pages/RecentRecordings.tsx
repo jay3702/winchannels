@@ -105,7 +105,6 @@ export default function RecentRecordings() {
   });
   const navigate = useNavigate();
   const playItem = useStore((s: AppState) => s.playItem);
-  const apiVersionApproved = useStore((s: AppState) => s.apiVersionApproved);
   function selectRecording(rec: Recording) {
     setSelected(rec);
     setSelectedRuleId(null);
@@ -115,10 +114,6 @@ export default function RecentRecordings() {
   }
 
   async function handleTrash(rec: Recording) {
-    if (!apiVersionApproved) {
-      setActionError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
-      return;
-    }
     try {
       await trashRecording(rec.id);
       setRecordings((list) => {
@@ -135,10 +130,6 @@ export default function RecentRecordings() {
   }
 
   async function handleMarkNotRecorded(rec: Recording) {
-    if (!apiVersionApproved) {
-      setActionError('Server was updated — go to Settings → API Compatibility to review and approve before making changes.');
-      return;
-    }
     if (!rec.program_id) {
       setActionError('Cannot mark as not recorded: program_id is missing.');
       return;
