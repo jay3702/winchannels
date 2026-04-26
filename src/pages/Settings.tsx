@@ -115,6 +115,27 @@ function buildBugReportDraft(input: BuildBugReportDraftInput): string {
   ].join('\n');
 }
 
+function redactServerUrls(text: string, serverList: ServerOption[]): string {
+  let out = text;
+  for (const server of serverList) {
+    const urls = [server.url, server.tailscaleUrl].filter(Boolean) as string[];
+    for (const url of urls) {
+      // Escape special regex characters in the URL string.
+      const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      out = out.replace(new RegExp(escaped, 'g'), `[${server.name}]`);
+      // Also match just the host:port without the scheme so bare IP:port occurrences are caught.
+      try {
+        const { host } = new URL(url);
+        const escapedHost = host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        out = out.replace(new RegExp(escapedHost, 'g'), `[${server.name}]`);
+      } catch {
+        // Ignore malformed URLs.
+      }
+    }
+  }
+  return out;
+}
+
 function areSameServers(a: ServerOption[], b: ServerOption[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((left, i) => {
@@ -324,7 +345,7 @@ export default function Settings() {
 
   function openBugReportComposer() {
     const active = servers.find((server) => server.id === useStore.getState().activeServerId) ?? servers[0];
-    const template = buildBugReportDraft({
+    const raw = buildBugReportDraft({
       activeServerName: active?.name ?? 'Unknown',
       apiVersion,
       apiPublicVersion,
@@ -333,6 +354,7 @@ export default function Settings() {
       testResult,
       errorLogText: getRecentClientErrorLogText(),
     });
+    const template = redactServerUrls(raw, servers);
     setBugReportDraft(template);
     setReportCopyMessage(null);
     setBugReportOpen(true);
